@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conductores - Mismatches N3 N5</title>
+  <link rel="stylesheet" href="assets/styles.css?v=20260428-11">
+  <script src="assets/dashboard-config.js?v=20260429-16"></script>
+  <script src="assets/mismatches-data.js?v=20260429-16"></script>
+  <script src="assets/siri-data.js?v=20260429-16"></script>
+  <script src="assets/ticketing-data.js?v=20260429-16"></script>
+  <script src="assets/app.js?v=20260429-20" defer></script>
+</head>
+<body data-page="conductores">
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-hidden="true">
+
+      <nav class="nav-list" aria-label="Principal">
+        <a class="nav-link" href="global-actual.html">Global actual</a>
+        <a class="nav-link" href="global-evolucion.html">Global evolucion</a>
+        <a class="nav-link" href="global-concesiones.html">Global concesiones</a>
+        <a class="nav-link active" href="conductores.html">Conductores</a>
+        <a class="nav-link" href="vehiculos.html">Vehículos</a>
+        <a class="nav-link" href="vehiculos-activos.html">Vehículos activos</a>
+        <a class="nav-link" href="vehiculos-ticketing.html">Vehículos ticketing N5</a>
+        <a class="nav-link" href="topologia.html">Topología</a>
+        <a class="nav-link" href="horarios.html">Horarios</a>
+        <a class="nav-link" href="rtig-expediciones.html">RTIG expediciones</a>
+        <a class="nav-link" href="rtig-paradas.html">RTIG paradas</a>
+      </nav>
+    </aside>
+
+    <div class="backdrop" id="backdrop"></div>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-button" id="menuButton" type="button" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16"></path>
+          </svg>
+        </button>
+        <div>
+          <h1>Conductores por concesión</h1>
+          <p id="conductoresSummary">Pendiente de datos</p>
+        </div>
+      </header>
+
+      <section class="status-panel" id="statusPanel" hidden>
+        <p id="statusText"></p>
+      </section>
+
+      <section class="chart-panel" aria-label="Sincronía conductores">
+        <div class="chart-wrap" id="conductoresChart"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+
