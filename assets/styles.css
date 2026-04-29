@@ -344,18 +344,18 @@ body:not([data-page="auth-error"]) .main {
 }
 
 .good .metric-icon {
-  color: var(--green);
-  background: rgba(255, 255, 255, 0.72);
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .warning .metric-icon {
-  color: var(--yellow);
-  background: rgba(255, 255, 255, 0.72);
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .bad .metric-icon {
-  color: var(--red);
-  background: rgba(255, 255, 255, 0.72);
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .metric-value {
@@ -416,6 +416,14 @@ body:not([data-page="auth-error"]) .chart-panel {
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
+}
+
+.chart-note {
+  margin: 0 0 14px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
 }
 
 .chart-wrap {

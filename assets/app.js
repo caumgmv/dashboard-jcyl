@@ -16,6 +16,7 @@ const METRICS = [
     summaryId: "vehiculosInstaladosSummary",
     chartId: "vehiculosInstaladosChart",
     label: "Vehículos instalados",
+    tooltip: "Porcentaje de vehículos con alguna posición de SIRI en N5",
     color: "#14746f",
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h5l2 2 7-7M5 17h14M6 17l1.6-6.2A3 3 0 0 1 10.5 8h3a3 3 0 0 1 2.9 2.3L18 17M7 17v1.2M17 17v1.2"></path></svg>'
   },
@@ -26,6 +27,7 @@ const METRICS = [
     summaryId: "vehiculosActivosSummary",
     chartId: "vehiculosActivosChart",
     label: "Vehículos activos",
+    tooltip: "Porcentaje de vehiculos con alguna posición recibida en N5 en los ultimos 2 dias",
     color: "#0f9d58",
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h5l2 3 4-8 2 5h5"></path></svg>'
   },
@@ -36,6 +38,7 @@ const METRICS = [
     summaryId: "vehiculosTicketingSummary",
     chartId: "vehiculosTicketingChart",
     label: "Vehículos ticketing N5",
+    tooltip: "Porcentaje de vehiculos con alguna validación en N5 en los ultimos 7 dias",
     color: "#2563eb",
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M6 7v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7M8 11h4M8 15h8M16 4v6"></path></svg>'
   },
@@ -97,6 +100,12 @@ const METRIC_BY_KEY = new Map(METRICS.map((metric) => [metric.key, metric]));
 const DEFAULT_THRESHOLDS = {
   green: 95,
   yellow: 50
+};
+
+const RATIO_METRIC_FIELDS = {
+  VehiculosInstalados: "InstalledCount",
+  VehiculosActivos: "ActiveCount",
+  VehiculosTicketing: "ActiveCount",
 };
 
 let globalConcesionesData = [];
@@ -397,10 +406,11 @@ function renderMetricCards(rowByMetric) {
     const subtext = getMetricCardSubtext(metric, row);
     const state = getState(value);
     const valueText = Number.isFinite(value) ? `${value.toFixed(1)}%` : "N/D";
+    const tooltip = metric.tooltip ? ` title="${escapeHtml(metric.tooltip)}"` : "";
 
     return `
       <a class="metric-card-link" href="${metric.page}" aria-label="Ver detalle ${escapeHtml(metric.label)}">
-        <article class="metric-card ${state}">
+        <article class="metric-card ${state}"${tooltip}>
           <div class="card-top">
             <h2 class="metric-name">${escapeHtml(metric.label)}</h2>
             <span class="metric-icon">${metric.icon}</span>
@@ -735,7 +745,7 @@ function getGlobalSortValue(row, key) {
   }
 
   const metricRow = row.metrics.get(key);
-  return toNumber(metricRow && metricRow.SyncPercent);
+  return getMetricPercent(metricRow, key);
 }
 
 function compareNullableNumbers(left, right) {
@@ -757,7 +767,7 @@ function compareNullableNumbers(left, right) {
 
 function getTotalMetricPercent(metricRows) {
   const values = METRICS
-    .map((metric) => toNumber(metricRows.get(metric.key) && metricRows.get(metric.key).SyncPercent))
+    .map((metric) => getMetricPercent(metricRows.get(metric.key), metric.key))
     .filter(Number.isFinite);
 
   if (!values.length) {
@@ -796,7 +806,7 @@ function renderGlobalConcesionesTable() {
     <tr>
       <th scope="row" class="org-cell">${escapeHtml(row.org)}</th>
       ${renderGlobalTotalCell(row)}
-      ${METRICS.map((metric) => renderGlobalMetricCell(row.metrics.get(metric.key))).join("")}
+      ${METRICS.map((metric) => renderGlobalMetricCell(row.metrics.get(metric.key), metric)).join("")}
     </tr>
   `).join("");
 
@@ -861,11 +871,12 @@ function renderGlobalTotalCell(row) {
   `;
 }
 
-function renderGlobalMetricCell(row) {
-  const value = toNumber(row && row.SyncPercent);
+function renderGlobalMetricCell(row, metric) {
+  const value = getMetricPercent(row, metric && metric.key);
   const mismatches = toNumber(row && row.MismatchCount);
   const valueText = Number.isFinite(value) ? `${value.toFixed(1)}%` : "N/D";
-  const mismatchText = Number.isFinite(mismatches) ? formatDiscrepancias(mismatches) : "Sin dato";
+  const metricText = formatMetricDetailText(row, metric && metric.key);
+  const mismatchText = metricText || (Number.isFinite(mismatches) ? formatDiscrepancias(mismatches) : "Sin dato");
   const grayStyle = Number.isFinite(value) ? ` style="${getGrayGradientStyle(value)}"` : "";
 
   return `
@@ -931,8 +942,11 @@ function renderMetricBarsFromCsv(csvText, metric) {
   const data = latestRows
     .map((row) => ({
       org: row.OrganizationAppId,
-      percent: toNumber(row.SyncPercent),
+      percent: getMetricPercent(row, metric.key),
       mismatches: toNumber(row.MismatchCount),
+      ratioText: formatMetricDetailText(row, metric.key),
+      ratioNumerator: getRatioNumerator(row, metric.key),
+      ratioDenominator: toNumber(row.TotalCount),
     }))
     .filter((item) => item.org && Number.isFinite(item.percent))
     .sort(compareBarRowsByAscendingPercent);
@@ -948,8 +962,11 @@ function renderMetricBarsFromCsv(csvText, metric) {
 }
 
 function compareBarRowsByAscendingPercent(left, right) {
+  const leftMismatches = Number.isFinite(left.mismatches) ? left.mismatches : 0;
+  const rightMismatches = Number.isFinite(right.mismatches) ? right.mismatches : 0;
+
   return left.percent - right.percent
-    || left.mismatches - right.mismatches
+    || leftMismatches - rightMismatches
     || left.org.localeCompare(right.org);
 }
 
@@ -958,7 +975,8 @@ function renderMetricBarsSummary(metric, executionDate, data) {
   if (summary) {
     const affected = data.filter((item) => item.percent < 100).length;
     const mismatches = data.reduce((total, item) => total + (Number.isFinite(item.mismatches) ? item.mismatches : 0), 0);
-    summary.textContent = `Ultima ejecucion: ${formatExecutionDate(executionDate)} | ${data.length} concesiones | ${affected} concesiones con discrepancias (no estan al 100%) | ${formatDiscrepancias(mismatches)}`;
+    const detailText = formatMetricAggregateDetail(metric.key, data) || formatDiscrepancias(mismatches);
+    summary.textContent = `Ultima ejecucion: ${formatExecutionDate(executionDate)} | ${data.length} concesiones | ${affected} concesiones con discrepancias (no estan al 100%) | ${detailText}`;
   }
 }
 
@@ -985,12 +1003,13 @@ function renderMetricBars(metric, data) {
 function renderBarRow(item) {
   const percent = Math.max(0, Math.min(100, item.percent));
   const mismatches = Number.isFinite(item.mismatches) ? item.mismatches : 0;
+  const countText = item.ratioText || formatDiscrepancias(mismatches);
 
   return `
     <div class="bar-row">
       <div class="bar-label" title="${escapeHtml(item.org)}">
         <span>${escapeHtml(item.org)}</span>
-        <span class="bar-label-count">${formatDiscrepancias(mismatches)}</span>
+        <span class="bar-label-count">${escapeHtml(countText)}</span>
       </div>
       <div class="bar-track">
         <div class="bar-fill" style="width:${percent.toFixed(1)}%; background:${getBlueGradientColor(percent)}"></div>
@@ -1036,6 +1055,91 @@ function getBlueGradientColor(percent) {
 function formatDiscrepancias(value) {
   const count = Number.isFinite(value) ? value : 0;
   return `${count} ${count === 1 ? "discrepancia" : "discrepancias"}`;
+}
+
+function getMetricPercent(row, metricKey) {
+  if (isRatioMetric(metricKey)) {
+    const numerator = getRatioNumerator(row, metricKey);
+    const denominator = toNumber(row && row.TotalCount);
+    if (!Number.isFinite(denominator) || denominator <= 0) {
+      return 0;
+    }
+    if (!Number.isFinite(numerator)) {
+      return NaN;
+    }
+
+    return Math.max(0, Math.min(100, (getBoundedRatioNumerator(numerator, denominator) / denominator) * 100));
+  }
+
+  const rawValue = toNumber(row && row.SyncPercent);
+  if (Number.isFinite(rawValue)) {
+    return rawValue;
+  }
+
+  return NaN;
+}
+
+function isRatioMetric(metricKey) {
+  return Object.prototype.hasOwnProperty.call(RATIO_METRIC_FIELDS, metricKey);
+}
+
+function getRatioNumerator(row, metricKey) {
+  const field = RATIO_METRIC_FIELDS[metricKey];
+  return field ? toNumber(row && row[field]) : NaN;
+}
+
+function getBoundedRatioNumerator(numerator, denominator) {
+  if (!Number.isFinite(numerator)) {
+    return NaN;
+  }
+  if (!Number.isFinite(denominator) || denominator < 0) {
+    return numerator;
+  }
+  return Math.max(0, Math.min(numerator, denominator));
+}
+
+function formatMetricDetailText(row, metricKey) {
+  if (!isRatioMetric(metricKey)) {
+    return "";
+  }
+
+  const numerator = getRatioNumerator(row, metricKey);
+  const denominator = toNumber(row && row.TotalCount);
+  if (!Number.isFinite(denominator)) {
+    return "Sin dato";
+  }
+  if (denominator <= 0) {
+    return `${formatCount(Number.isFinite(numerator) ? Math.max(0, numerator) : 0)}/0`;
+  }
+  if (!Number.isFinite(numerator)) {
+    return "Sin dato";
+  }
+
+  return `${formatCount(getBoundedRatioNumerator(numerator, denominator))}/${formatCount(denominator)}`;
+}
+
+function formatMetricAggregateDetail(metricKey, data) {
+  if (!isRatioMetric(metricKey)) {
+    return "";
+  }
+
+  const totals = data.reduce((acc, item) => {
+    if (Number.isFinite(item.ratioNumerator) && Number.isFinite(item.ratioDenominator) && item.ratioDenominator >= 0) {
+      acc.numerator += getBoundedRatioNumerator(item.ratioNumerator, item.ratioDenominator);
+      acc.denominator += item.ratioDenominator;
+    }
+    return acc;
+  }, { numerator: 0, denominator: 0 });
+
+  if (totals.denominator <= 0) {
+    return "";
+  }
+
+  return `${formatCount(totals.numerator)}/${formatCount(totals.denominator)}`;
+}
+
+function formatCount(value) {
+  return Number.isInteger(value) ? String(value) : String(Number(value).toFixed(1));
 }
 
 function parseCsv(text) {
