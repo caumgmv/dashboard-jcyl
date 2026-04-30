@@ -569,6 +569,9 @@ function renderDashboardCardsForCurrentFilters() {
 }
 
 function buildMetricRowsForSelectedIntegrators(rows) {
+  const globalRowByMetric = getLatestRowsByMetric(
+    rows.filter((row) => normalize(row.Scope) === "GLOBAL")
+  );
   const orgRows = getLatestRowsByOrgAndMetric(
     rows.filter((row) => normalize(row.Scope) === "ORG")
   ).filter((row) => rowMatchesIntegratorFilters(
@@ -583,17 +586,19 @@ function buildMetricRowsForSelectedIntegrators(rows) {
       return;
     }
 
-    rowByMetric.set(metric.key, aggregateMetricRows(metric, metricRows));
+    rowByMetric.set(metric.key, aggregateMetricRows(metric, metricRows, globalRowByMetric.get(metric.key)));
   });
 
   return rowByMetric;
 }
 
-function aggregateMetricRows(metric, rows) {
-  const total = sumNumberField(rows, "TotalCount");
+function aggregateMetricRows(metric, rows, globalRow) {
+  const rawTotal = sumNumberField(rows, "TotalCount");
+  const globalTotal = toNumber(globalRow && globalRow.TotalCount);
+  const total = capAggregateCount(rawTotal, globalTotal);
   const mismatches = sumNumberField(rows, "MismatchCount");
-  const active = sumNumberField(rows, "ActiveCount");
-  const installed = sumNumberField(rows, "InstalledCount");
+  const active = capAggregateCount(sumNumberField(rows, "ActiveCount"), toNumber(globalRow && globalRow.ActiveCount));
+  const installed = capAggregateCount(sumNumberField(rows, "InstalledCount"), toNumber(globalRow && globalRow.InstalledCount));
   const row = {
     ExecutionDate: getLatestExecution(rows),
     Scope: "GLOBAL",
@@ -610,16 +615,24 @@ function aggregateMetricRows(metric, rows) {
   };
 
   if (isRatioMetric(metric.key)) {
-    const numerator = sumRatioNumerator(rows, metric.key);
+    const rawNumerator = sumRatioNumerator(rows, metric.key);
+    const numerator = capAggregateCount(rawNumerator, toNumber(globalRow && globalRow[RATIO_METRIC_FIELDS[metric.key]]));
     if (Number.isFinite(numerator) && Number.isFinite(total) && total > 0) {
-      row.SyncPercent = ((getBoundedRatioNumerator(numerator, total) / total) * 100).toFixed(1);
-      row.MismatchCount = String(Math.max(total - getBoundedRatioNumerator(numerator, total), 0));
+      const boundedNumerator = getBoundedRatioNumerator(numerator, total);
+      const percentDenominator = Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : total;
+      const percentNumerator = Number.isFinite(rawNumerator)
+        ? getBoundedRatioNumerator(rawNumerator, percentDenominator)
+        : boundedNumerator;
+      row[RATIO_METRIC_FIELDS[metric.key]] = String(boundedNumerator);
+      row.SyncPercent = ((percentNumerator / percentDenominator) * 100).toFixed(1);
+      row.MismatchCount = String(Math.max(total - boundedNumerator, 0));
     }
     return row;
   }
 
   if (metric.key === "Vehiculos" && Number.isFinite(total) && total > 0) {
-    row.SyncPercent = ((Math.max(total - mismatches, 0) / total) * 100).toFixed(1);
+    const percentDenominator = Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : total;
+    row.SyncPercent = ((Math.max(percentDenominator - mismatches, 0) / percentDenominator) * 100).toFixed(1);
     return row;
   }
 
@@ -630,6 +643,16 @@ function aggregateMetricRows(metric, rows) {
     row.SyncPercent = (syncValues.reduce((sum, value) => sum + value, 0) / syncValues.length).toFixed(1);
   }
   return row;
+}
+
+function capAggregateCount(value, maxValue) {
+  if (!Number.isFinite(value)) {
+    return value;
+  }
+  if (!Number.isFinite(maxValue) || maxValue <= 0) {
+    return value;
+  }
+  return Math.min(value, maxValue);
 }
 
 function sumNumberField(rows, fieldName) {
