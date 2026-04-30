@@ -32,6 +32,17 @@ const METRICS = [
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h5l2 3 4-8 2 5h5"></path></svg>'
   },
   {
+    key: "VehiculosTicketingN3",
+    page: "vehiculos-ticketing-n3.html",
+    pageId: "vehiculos-ticketing-n3",
+    summaryId: "vehiculosTicketingN3Summary",
+    chartId: "vehiculosTicketingN3Chart",
+    label: "Vehículos ticketing N3",
+    tooltip: "Porcentaje de vehiculos con alguna validación en N3 en los ultimos 7 dias",
+    color: "#2563eb",
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M6 7v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7M8 11h4M8 15h8M16 4v6"></path></svg>'
+  },
+  {
     key: "VehiculosTicketing",
     page: "vehiculos-ticketing.html",
     pageId: "vehiculos-ticketing",
@@ -105,17 +116,71 @@ const DEFAULT_THRESHOLDS = {
 const RATIO_METRIC_FIELDS = {
   VehiculosInstalados: "InstalledCount",
   VehiculosActivos: "ActiveCount",
+  VehiculosTicketingN3: "ActiveCount",
   VehiculosTicketing: "ActiveCount",
 };
+
+const UNKNOWN_INTEGRATOR = "Desconocido";
+const INTEGRATOR_FILTERS = ["GMV", "Proconsi", UNKNOWN_INTEGRATOR];
+const INTEGRATOR_LABELS = {
+  [UNKNOWN_INTEGRATOR]: "Sin asignar",
+};
+
+const HELP_SECTIONS = [
+  {
+    title: "Vehículos",
+    text: "Porcentaje de vehículos del parque total cuya información está correctamente registrada en el Sistema Central. Las discrepancias indican vehículos con datos inconsistentes o ausentes en la base de datos maestra.",
+  },
+  {
+    title: "Vehículos instalados",
+    text: "Porcentaje de vehículos del parque total de los que se ha recibido al menos una comunicación reciente desde su equipamiento de a bordo (OBU). Un vehículo se considera instalado cuando el sistema central tiene constancia de actividad dentro del periodo de referencia.",
+  },
+  {
+    title: "Vehículos activos",
+    text: "Porcentaje de vehículos instalados que han registrado actividad operativa en el periodo analizado. Un valor inferior al de vehículos instalados indica unidades equipadas pero sin servicio reciente.",
+  },
+  {
+    title: "Vehículos ticketing N3",
+    text: "Porcentaje de vehículos del parque total que han generado datos de validación registrados en el sistema de ticketing N3. Un valor bajo puede indicar que parte de la flota no ha generado validaciones recientes o que hay incidencias en la transmisión de eventos de validación.",
+  },
+  {
+    title: "Vehículos ticketing N5",
+    text: "Porcentaje de vehículos del parque total que han generado datos de validación registrados en el módulo de ticketing N5. Un valor bajo puede indicar que parte de la flota aún no opera con el sistema de validación integrado o que hay incidencias en la transmisión de eventos de validación.",
+  },
+  {
+    title: "Conductores",
+    text: "Porcentaje de conductores sincronizados correctamente entre el sistema de gestión y el equipamiento de a bordo. Esta sincronización es automática, por lo que cualquier discrepancia refleja un error que debe ser investigado y resuelto con carácter prioritario.",
+  },
+  {
+    title: "Topología",
+    text: "Porcentaje de elementos de topología (líneas, paradas, rutas) correctamente sincronizados en los equipos de a bordo. Las discrepancias en este indicador implican que determinadas paradas pueden no ser detectadas correctamente durante la operación, afectando al registro de expediciones y a la calidad del servicio. Requiere atención prioritaria.",
+  },
+  {
+    title: "Horarios",
+    text: "Porcentaje de horarios correctamente sincronizados en los vehículos. Las discrepancias pueden provocar que expediciones programadas no sean reconocidas por el sistema, generando saltos en el registro de servicio. Requiere atención prioritaria.",
+  },
+  {
+    title: "RTIG - Expediciones / Paradas",
+    text: "Los indicadores RTIG reflejan la coherencia de los datos de posicionamiento y paso por parada reportados en tiempo real. Las discrepancias son en gran medida consecuencia directa de los errores de sincronización de Topología y Horarios: una vez corregidos estos, se espera una mejora significativa en los valores RTIG.",
+  },
+  {
+    title: 'Vista "Global por concesión"',
+    text: "Esta vista desglosa todos los indicadores anteriores de forma individual para cada concesión operativa. Permite identificar qué concesiones presentan mayor número de discrepancias y priorizar las acciones correctoras, facilitando la coordinación con cada operador de forma independiente.",
+  },
+];
 
 let globalConcesionesData = [];
 let globalConcesionesSort = {
   key: "total",
   direction: "asc",
 };
+let globalConcesionesIntegratorFilters = new Set(INTEGRATOR_FILTERS);
+let globalDashboardRows = [];
+let globalIntegratorModalData = [];
 
 document.addEventListener("DOMContentLoaded", async () => {
   setupNavigation();
+  setupHelpButton();
 
   const page = document.body ? document.body.dataset.page : "";
   if (page === "auth-error") {
@@ -329,6 +394,84 @@ function setupNavigation() {
   });
 }
 
+function getTopbarActions() {
+  const topbar = document.querySelector(".topbar");
+  if (!topbar) {
+    return null;
+  }
+
+  let actions = topbar.querySelector(".topbar-actions");
+  if (!actions) {
+    actions = document.createElement("div");
+    actions.className = "topbar-actions";
+    topbar.appendChild(actions);
+  }
+  return actions;
+}
+
+function setupHelpButton() {
+  const actions = getTopbarActions();
+  if (!actions || actions.querySelector(".help-button")) {
+    return;
+  }
+
+  const button = document.createElement("button");
+  button.className = "help-button";
+  button.type = "button";
+  button.setAttribute("aria-label", "Ver ayuda de indicadores");
+  button.title = "Ayuda";
+  button.textContent = "?";
+  button.addEventListener("click", openHelpModal);
+  actions.appendChild(button);
+}
+
+function openHelpModal() {
+  closeHelpModal();
+  const modal = document.createElement("div");
+  modal.className = "help-modal-backdrop";
+  modal.dataset.helpModal = "true";
+  modal.innerHTML = `
+    <section class="help-modal" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
+      <div class="help-modal-header">
+        <h2 id="helpModalTitle">Ayuda de indicadores</h2>
+        <button class="modal-close-button" type="button" data-help-modal-close aria-label="Cerrar">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="help-modal-body">
+        ${HELP_SECTIONS.map((section) => `
+          <section class="help-modal-section">
+            <h3>${escapeHtml(section.title)}</h3>
+            <p>${escapeHtml(section.text)}</p>
+          </section>
+        `).join("")}
+      </div>
+    </section>
+  `;
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal || event.target.closest("[data-help-modal-close]")) {
+      closeHelpModal();
+    }
+  });
+  document.addEventListener("keydown", handleHelpModalKeydown);
+  document.body.appendChild(modal);
+  modal.querySelector("[data-help-modal-close]")?.focus();
+}
+
+function closeHelpModal() {
+  document.querySelectorAll("[data-help-modal='true']").forEach((modal) => modal.remove());
+  document.removeEventListener("keydown", handleHelpModalKeydown);
+}
+
+function handleHelpModalKeydown(event) {
+  if (event.key === "Escape") {
+    closeHelpModal();
+  }
+}
+
 function getEmbeddedCsvData() {
   return combineEmbeddedCsvTexts(
     typeof window.MISMATCHES_CSV === "string" ? window.MISMATCHES_CSV : "",
@@ -350,6 +493,7 @@ function combineEmbeddedCsvTexts(...texts) {
     "ExecutionDate",
     "Scope",
     "OrganizationAppId",
+    "Integrator",
     "Metric",
     "AnalysisDate",
     "MismatchCount",
@@ -378,6 +522,8 @@ function escapeCsvValue(value) {
 
 function renderDashboardFromCsv(csvText) {
   const rows = parseCsv(csvText);
+  globalDashboardRows = rows;
+  globalConcesionesIntegratorFilters = new Set(INTEGRATOR_FILTERS);
   const globalRows = rows.filter((row) => normalize(row.Scope) === "GLOBAL");
 
   if (!globalRows.length) {
@@ -391,7 +537,123 @@ function renderDashboardFromCsv(csvText) {
 
   hideStatus();
   renderLastRun(latestExecution);
+  renderGlobalConcesionesIntegratorFilters(buildIntegratorFilterDataFromRows(rows));
   renderMetricCards(rowByMetric);
+}
+
+function renderDashboardCardsForCurrentFilters() {
+  const globalRows = globalDashboardRows.filter((row) => normalize(row.Scope) === "GLOBAL");
+  if (!globalRows.length) {
+    renderEmptyCards();
+    return;
+  }
+
+  const latestExecution = getLatestExecution(globalRows);
+  renderLastRun(latestExecution);
+
+  if (areAllIntegratorFiltersSelected()) {
+    hideStatus();
+    renderMetricCards(getLatestRowsByMetric(globalRows));
+    return;
+  }
+
+  const rowByMetric = buildMetricRowsForSelectedIntegrators(globalDashboardRows);
+  if (!rowByMetric.size) {
+    showStatus("Selecciona al menos un integrador con datos.");
+    renderEmptyCards();
+    return;
+  }
+
+  hideStatus();
+  renderMetricCards(rowByMetric);
+}
+
+function buildMetricRowsForSelectedIntegrators(rows) {
+  const orgRows = getLatestRowsByOrgAndMetric(
+    rows.filter((row) => normalize(row.Scope) === "ORG")
+  ).filter((row) => rowMatchesIntegratorFilters(
+    { integrator: getRowIntegrator(row) },
+    globalConcesionesIntegratorFilters
+  ));
+
+  const rowByMetric = new Map();
+  METRICS.forEach((metric) => {
+    const metricRows = orgRows.filter((row) => row.Metric === metric.key);
+    if (!metricRows.length) {
+      return;
+    }
+
+    rowByMetric.set(metric.key, aggregateMetricRows(metric, metricRows));
+  });
+
+  return rowByMetric;
+}
+
+function aggregateMetricRows(metric, rows) {
+  const total = sumNumberField(rows, "TotalCount");
+  const mismatches = sumNumberField(rows, "MismatchCount");
+  const active = sumNumberField(rows, "ActiveCount");
+  const installed = sumNumberField(rows, "InstalledCount");
+  const row = {
+    ExecutionDate: getLatestExecution(rows),
+    Scope: "GLOBAL",
+    OrganizationAppId: "",
+    Integrator: "",
+    Metric: metric.key,
+    AnalysisDate: "",
+    MismatchCount: Number.isFinite(mismatches) ? String(mismatches) : "",
+    ActiveCount: Number.isFinite(active) ? String(active) : "",
+    InstalledCount: Number.isFinite(installed) ? String(installed) : "",
+    TotalCount: Number.isFinite(total) ? String(total) : "",
+    SyncPercent: "",
+    IgnoreOrganizations: "",
+  };
+
+  if (isRatioMetric(metric.key)) {
+    const numerator = sumRatioNumerator(rows, metric.key);
+    if (Number.isFinite(numerator) && Number.isFinite(total) && total > 0) {
+      row.SyncPercent = ((getBoundedRatioNumerator(numerator, total) / total) * 100).toFixed(1);
+      row.MismatchCount = String(Math.max(total - getBoundedRatioNumerator(numerator, total), 0));
+    }
+    return row;
+  }
+
+  if (metric.key === "Vehiculos" && Number.isFinite(total) && total > 0) {
+    row.SyncPercent = ((Math.max(total - mismatches, 0) / total) * 100).toFixed(1);
+    return row;
+  }
+
+  const syncValues = rows
+    .map((item) => toNumber(item.SyncPercent))
+    .filter(Number.isFinite);
+  if (syncValues.length) {
+    row.SyncPercent = (syncValues.reduce((sum, value) => sum + value, 0) / syncValues.length).toFixed(1);
+  }
+  return row;
+}
+
+function sumNumberField(rows, fieldName) {
+  const values = rows
+    .map((row) => toNumber(row && row[fieldName]))
+    .filter(Number.isFinite);
+  if (!values.length) {
+    return NaN;
+  }
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function sumRatioNumerator(rows, metricKey) {
+  const values = rows
+    .map((row) => getRatioNumerator(row, metricKey))
+    .filter(Number.isFinite);
+  if (!values.length) {
+    return NaN;
+  }
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function areAllIntegratorFiltersSelected() {
+  return INTEGRATOR_FILTERS.every((filter) => globalConcesionesIntegratorFilters.has(filter));
 }
 
 function renderMetricCards(rowByMetric) {
@@ -451,7 +713,7 @@ function getMetricCardSubtext(metric, row) {
     return `Activos: ${activeText} | Instalados: ${installedText} | Total: ${totalText}`;
   }
 
-  if (metric.key === "VehiculosTicketing") {
+  if (metric.key === "VehiculosTicketingN3" || metric.key === "VehiculosTicketing") {
     const activeCount = toNumber(row && row.ActiveCount);
     const totalCount = toNumber(row && row.TotalCount);
     const activeText = Number.isFinite(activeCount) ? activeCount : "N/D";
@@ -669,6 +931,7 @@ function renderGlobalConcesionesFromCsv(csvText) {
   const data = Array.from(rowByOrg.entries())
     .map(([org, metrics]) => ({
       org,
+      integrator: getIntegratorFromMetricRows(metrics),
       metrics,
       totalPercent: getTotalMetricPercent(metrics),
       totalMismatches: getTotalMismatches(metrics),
@@ -678,7 +941,9 @@ function renderGlobalConcesionesFromCsv(csvText) {
   hideStatus();
   globalConcesionesData = data;
   globalConcesionesSort = { key: "total", direction: "asc" };
+  globalConcesionesIntegratorFilters = new Set(INTEGRATOR_FILTERS);
   renderGlobalConcesionesSummary(latestExecution, data);
+  renderGlobalConcesionesIntegratorFilters(data);
   renderGlobalConcesionesTable();
 }
 
@@ -688,6 +953,8 @@ function compareGlobalConcesionRows(left, right, sortConfig = globalConcesionesS
 
   if (sortConfig.key === "org") {
     result = left.org.localeCompare(right.org);
+  } else if (sortConfig.key === "integrator") {
+    result = left.integrator.localeCompare(right.integrator);
   } else {
     const leftValue = getGlobalSortValue(left, sortConfig.key);
     const rightValue = getGlobalSortValue(right, sortConfig.key);
@@ -784,6 +1051,26 @@ function getTotalMismatches(metricRows) {
     .reduce((total, value) => total + value, 0);
 }
 
+function buildIntegratorFilterDataFromRows(rows) {
+  const latestRows = getLatestRowsByOrgAndMetric(
+    rows.filter((row) => normalize(row.Scope) === "ORG")
+  );
+  const rowByOrg = new Map();
+
+  latestRows.forEach((row) => {
+    const org = String(row.OrganizationAppId || "").trim();
+    if (!org || rowByOrg.has(org)) {
+      return;
+    }
+    rowByOrg.set(org, {
+      org,
+      integrator: getRowIntegrator(row),
+    });
+  });
+
+  return Array.from(rowByOrg.values());
+}
+
 function renderGlobalConcesionesSummary(executionDate, data) {
   const summary = document.getElementById("globalConcesionesSummary");
   if (!summary) {
@@ -791,7 +1078,10 @@ function renderGlobalConcesionesSummary(executionDate, data) {
   }
 
   const affected = data.filter((row) => Number.isFinite(row.totalPercent) && row.totalPercent < 100).length;
-  summary.textContent = `Ultima ejecucion: ${formatExecutionDate(executionDate)} | ${data.length} concesiones | ${affected} con total por debajo de 100%`;
+  const integratorSummary = INTEGRATOR_FILTERS
+    .map((filter) => `${formatIntegratorLabel(filter)}: ${countRowsByIntegrator(data, filter)}`)
+    .join(" | ");
+  summary.textContent = `Ultima ejecucion: ${formatExecutionDate(executionDate)} | ${data.length} concesiones | ${affected} con total por debajo de 100% | ${integratorSummary}`;
 }
 
 function renderGlobalConcesionesTable() {
@@ -800,11 +1090,14 @@ function renderGlobalConcesionesTable() {
     return;
   }
 
-  const data = [...globalConcesionesData].sort((left, right) => compareGlobalConcesionRows(left, right));
+  const data = globalConcesionesData
+    .filter((row) => rowMatchesIntegratorFilters(row, globalConcesionesIntegratorFilters))
+    .sort((left, right) => compareGlobalConcesionRows(left, right));
   const headers = METRICS.map((metric) => renderSortableHeader(metric.key, metric.label)).join("");
   const body = data.map((row) => `
     <tr>
       <th scope="row" class="org-cell">${escapeHtml(row.org)}</th>
+      <td class="integrator-cell">${renderIntegratorBadges(row.integrator)}</td>
       ${renderGlobalTotalCell(row)}
       ${METRICS.map((metric) => renderGlobalMetricCell(row.metrics.get(metric.key), metric)).join("")}
     </tr>
@@ -815,6 +1108,7 @@ function renderGlobalConcesionesTable() {
       <thead>
         <tr>
           ${renderSortableHeader("org", "Concesion")}
+          ${renderSortableHeader("integrator", "Integrador")}
           ${renderSortableHeader("total", "Total")}
           ${headers}
         </tr>
@@ -824,6 +1118,105 @@ function renderGlobalConcesionesTable() {
   `;
 
   setupGlobalConcesionesSorting(container);
+}
+
+function renderGlobalConcesionesIntegratorFilters(data) {
+  const container = document.getElementById("globalIntegratorFilters");
+  if (!container) {
+    return;
+  }
+  globalIntegratorModalData = data;
+  if (!data.length) {
+    container.innerHTML = "";
+    return;
+  }
+
+  container.innerHTML = `
+    <button class="integrator-filter-title" type="button" data-integrator-modal-open>Integradores</button>
+    <div class="integrator-filters">
+      ${INTEGRATOR_FILTERS.map((filter) => `
+        <label class="integrator-filter ${getIntegratorClass(filter)} ${globalConcesionesIntegratorFilters.has(filter) ? "active" : ""}">
+          <input type="checkbox" value="${escapeHtml(filter)}" ${globalConcesionesIntegratorFilters.has(filter) ? "checked" : ""}>
+          <span>${escapeHtml(formatIntegratorLabel(filter))}</span>
+          <span class="integrator-filter-count">${countRowsByIntegrator(data, filter)}</span>
+        </label>
+      `).join("")}
+    </div>
+  `;
+
+  setupGlobalConcesionesIntegratorFilters(container);
+  setupIntegratorModalOpen(container);
+}
+
+function setupIntegratorModalOpen(container) {
+  const button = container.querySelector("[data-integrator-modal-open]");
+  if (!button) {
+    return;
+  }
+  button.addEventListener("click", () => openIntegratorModal(globalIntegratorModalData));
+}
+
+function openIntegratorModal(data) {
+  closeIntegratorModal();
+  const modal = document.createElement("div");
+  modal.className = "integrator-modal-backdrop";
+  modal.dataset.integratorModal = "true";
+  modal.innerHTML = `
+    <section class="integrator-modal" role="dialog" aria-modal="true" aria-labelledby="integratorModalTitle">
+      <div class="integrator-modal-header">
+        <h2 id="integratorModalTitle">Concesiones por integrador</h2>
+        <button class="modal-close-button" type="button" data-integrator-modal-close aria-label="Cerrar">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="integrator-modal-body">
+        ${renderIntegratorModalGroups(data)}
+      </div>
+    </section>
+  `;
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal || event.target.closest("[data-integrator-modal-close]")) {
+      closeIntegratorModal();
+    }
+  });
+  document.addEventListener("keydown", handleIntegratorModalKeydown);
+  document.body.appendChild(modal);
+  modal.querySelector("[data-integrator-modal-close]")?.focus();
+}
+
+function closeIntegratorModal() {
+  document.querySelectorAll("[data-integrator-modal='true']").forEach((modal) => modal.remove());
+  document.removeEventListener("keydown", handleIntegratorModalKeydown);
+}
+
+function handleIntegratorModalKeydown(event) {
+  if (event.key === "Escape") {
+    closeIntegratorModal();
+  }
+}
+
+function renderIntegratorModalGroups(data) {
+  return INTEGRATOR_FILTERS.map((filter) => {
+    const orgs = data
+      .filter((row) => getIntegratorTokens(row.integrator).includes(filter))
+      .map((row) => row.org)
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right));
+
+    return `
+      <section class="integrator-modal-group">
+        <h3>${escapeHtml(formatIntegratorLabel(filter))} <span>${orgs.length}</span></h3>
+        ${orgs.length ? `
+          <div class="integrator-org-list">
+            ${orgs.map((org) => `<span class="integrator-org">${escapeHtml(org)}</span>`).join("")}
+          </div>
+        ` : '<p class="integrator-modal-empty">Sin concesiones.</p>'}
+      </section>
+    `;
+  }).join("");
 }
 
 function renderSortableHeader(key, label) {
@@ -853,6 +1246,24 @@ function setupGlobalConcesionesSorting(container) {
       }
 
       renderGlobalConcesionesTable();
+    });
+  });
+}
+
+function setupGlobalConcesionesIntegratorFilters(container) {
+  container.querySelectorAll("input[type='checkbox']").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      checkbox.closest(".integrator-filter")?.classList.toggle("active", checkbox.checked);
+      const selected = new Set();
+      container.querySelectorAll("input[type='checkbox']:checked").forEach((checkedCheckbox) => {
+        selected.add(checkedCheckbox.value);
+      });
+      globalConcesionesIntegratorFilters = selected;
+      if (document.body && document.body.dataset.page === "global-actual") {
+        renderDashboardCardsForCurrentFilters();
+      } else {
+        renderGlobalConcesionesTable();
+      }
     });
   });
 }
@@ -942,6 +1353,7 @@ function renderMetricBarsFromCsv(csvText, metric) {
   const data = latestRows
     .map((row) => ({
       org: row.OrganizationAppId,
+      integrator: getRowIntegrator(row),
       percent: getMetricPercent(row, metric.key),
       mismatches: toNumber(row.MismatchCount),
       ratioText: formatMetricDetailText(row, metric.key),
@@ -1004,12 +1416,13 @@ function renderBarRow(item) {
   const percent = Math.max(0, Math.min(100, item.percent));
   const mismatches = Number.isFinite(item.mismatches) ? item.mismatches : 0;
   const countText = item.ratioText || formatDiscrepancias(mismatches);
+  const detailText = item.integrator ? `${formatIntegratorDisplay(item.integrator)} | ${countText}` : countText;
 
   return `
     <div class="bar-row">
       <div class="bar-label" title="${escapeHtml(item.org)}">
         <span>${escapeHtml(item.org)}</span>
-        <span class="bar-label-count">${escapeHtml(countText)}</span>
+        <span class="bar-label-count">${escapeHtml(detailText)}</span>
       </div>
       <div class="bar-track">
         <div class="bar-fill" style="width:${percent.toFixed(1)}%; background:${getBlueGradientColor(percent)}"></div>
@@ -1032,8 +1445,8 @@ function renderEmptyMetricBars(metric) {
 }
 
 function ensureBackButton() {
-  const topbar = document.querySelector(".topbar");
-  if (!topbar || topbar.querySelector(".back-button")) {
+  const actions = getTopbarActions();
+  if (!actions || actions.querySelector(".back-button")) {
     return;
   }
 
@@ -1041,7 +1454,7 @@ function ensureBackButton() {
   link.className = "back-button";
   link.href = "global-actual.html";
   link.textContent = "Volver a global";
-  topbar.appendChild(link);
+  actions.prepend(link);
 }
 
 function getBlueGradientColor(percent) {
@@ -1136,6 +1549,69 @@ function formatMetricAggregateDetail(metricKey, data) {
   }
 
   return `${formatCount(totals.numerator)}/${formatCount(totals.denominator)}`;
+}
+
+function getIntegratorFromMetricRows(metricRows) {
+  let fallback = UNKNOWN_INTEGRATOR;
+  for (const row of metricRows.values()) {
+    const integrator = getRowIntegrator(row);
+    if (integrator && integrator !== UNKNOWN_INTEGRATOR) {
+      return integrator;
+    }
+    fallback = integrator || fallback;
+  }
+  return fallback;
+}
+
+function getRowIntegrator(row) {
+  const value = String(row && row.Integrator || "").trim();
+  return value || UNKNOWN_INTEGRATOR;
+}
+
+function getIntegratorTokens(value) {
+  const tokens = String(value || "")
+    .split(/[/,|+]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  const knownTokens = tokens.filter((token) => INTEGRATOR_FILTERS.includes(token));
+  return knownTokens.length ? knownTokens : [UNKNOWN_INTEGRATOR];
+}
+
+function rowMatchesIntegratorFilters(row, selectedFilters) {
+  if (!selectedFilters || !selectedFilters.size) {
+    return false;
+  }
+  return getIntegratorTokens(row.integrator).some((token) => selectedFilters.has(token));
+}
+
+function countRowsByIntegrator(data, filter) {
+  return data.filter((row) => getIntegratorTokens(row.integrator).includes(filter)).length;
+}
+
+function renderIntegratorBadges(value) {
+  return getIntegratorTokens(value).map((token) => (
+    `<span class="integrator-badge ${getIntegratorClass(token)}">${escapeHtml(formatIntegratorLabel(token))}</span>`
+  )).join("");
+}
+
+function formatIntegratorDisplay(value) {
+  return getIntegratorTokens(value).map(formatIntegratorLabel).join("/");
+}
+
+function formatIntegratorLabel(value) {
+  return INTEGRATOR_LABELS[value] || value;
+}
+
+function getIntegratorClass(value) {
+  const normalized = normalize(value).replaceAll("/", "-");
+  if (normalized === "GMV") {
+    return "gmv";
+  }
+  if (normalized === "PROCONSI") {
+    return "proconsi";
+  }
+  return "unknown";
 }
 
 function formatCount(value) {
