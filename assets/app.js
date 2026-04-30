@@ -1149,10 +1149,6 @@ function renderGlobalConcesionesIntegratorFilters(data) {
     return;
   }
   globalIntegratorModalData = data;
-  if (!data.length) {
-    container.innerHTML = "";
-    return;
-  }
 
   container.innerHTML = `
     <button class="integrator-filter-title" type="button" data-integrator-modal-open>Integradores</button>
