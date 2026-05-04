@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vehículos ticketing N5 - Mismatches N3 N5</title>
-  <link rel="stylesheet" href="assets/styles.css?v=20260430-08">
+  <title>Global por empresa - Mismatches N3 N5</title>
+  <link rel="stylesheet" href="assets/styles.css?v=20260504-01">
   <script src="assets/dashboard-config.js?v=20260429-16"></script>
-  <script src="assets/mismatches-data.js?v=20260430-01"></script>
-  <script src="assets/siri-data.js?v=20260430-01"></script>
-  <script src="assets/ticketing-data.js?v=20260430-01"></script>
-  <script src="assets/app.js?v=20260430-11" defer></script>
+  <script src="assets/mismatches-data.js?v=20260504-01"></script>
+  <script src="assets/siri-data.js?v=20260504-01"></script>
+  <script src="assets/ticketing-data.js?v=20260504-01"></script>
+  <script src="assets/app.js?v=20260504-01" defer></script>
 </head>
-<body data-page="vehiculos-ticketing">
+<body data-page="global-empresas">
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-hidden="true">
 
@@ -21,13 +21,12 @@
         <a class="nav-link" href="global-actual.html">Global actual</a>
         <!-- <a class="nav-link" href="global-evolucion.html">Global evolucion</a> -->
         <a class="nav-link" href="global-concesiones.html">Global concesiones</a>
-        <a class="nav-link" href="global-empresas.html">Global empresas</a>
+        <a class="nav-link active" href="global-empresas.html">Global empresas</a>
         <a class="nav-link" href="conductores.html">Conductores</a>
         <a class="nav-link" href="vehiculos.html">Vehículos</a>
-        <a class="nav-link" href="vehiculos-instalados.html">Vehículos instalados</a>
         <a class="nav-link" href="vehiculos-activos.html">Vehículos activos</a>
         <a class="nav-link" href="vehiculos-ticketing-n3.html">Vehículos ticketing N3</a>
-        <a class="nav-link active" href="vehiculos-ticketing.html">Vehículos ticketing N5</a>
+        <a class="nav-link" href="vehiculos-ticketing.html">Vehículos ticketing N5</a>
         <a class="nav-link" href="topologia.html">Topología</a>
         <a class="nav-link" href="horarios.html">Horarios</a>
         <a class="nav-link" href="rtig-expediciones.html">RTIG expediciones</a>
@@ -45,18 +44,19 @@
           </svg>
         </button>
         <div>
-          <h1>Vehículos ticketing N5 por concesión</h1>
-          <p id="vehiculosTicketingSummary">Pendiente de datos</p>
+          <h1>Global por empresa</h1>
+          <p id="globalEmpresasSummary">Pendiente de datos</p>
         </div>
       </header>
+
+      <section class="integrator-filter-bar" id="globalIntegratorFilters" aria-label="Filtro por integrador"></section>
 
       <section class="status-panel" id="statusPanel" hidden>
         <p id="statusText"></p>
       </section>
 
-      <section class="chart-panel" aria-label="Vehículos ticketing N5">
-        <p class="chart-note">Porcentaje de vehiculos con alguna validación en N5 en los ultimos 7 dias</p>
-        <div class="chart-wrap" id="vehiculosTicketingChart"></div>
+      <section class="chart-panel" aria-label="Indicadores globales por empresa">
+        <div class="table-wrap" id="globalEmpresasTable"></div>
       </section>
     </main>
   </div>

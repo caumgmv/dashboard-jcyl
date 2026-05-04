@@ -11,7 +11,7 @@ window.MISMATCHES_CONFIG = {
   },
   "siri": {
     "enabled": true,
-    "active_threshold_hours": 48.0
+    "active_threshold_hours": 168.0
   },
   "ticketing": {
     "enabled": true,

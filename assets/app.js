@@ -27,7 +27,7 @@ const METRICS = [
     summaryId: "vehiculosActivosSummary",
     chartId: "vehiculosActivosChart",
     label: "Vehículos activos",
-    tooltip: "Porcentaje de vehiculos con alguna posición recibida en N5 en los ultimos 2 dias",
+    tooltip: "Porcentaje de vehiculos con alguna posición recibida en N5 en los ultimos 7 dias",
     color: "#0f9d58",
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h5l2 3 4-8 2 5h5"></path></svg>'
   },
@@ -125,6 +125,8 @@ const INTEGRATOR_FILTERS = ["GMV", "Proconsi", UNKNOWN_INTEGRATOR];
 const INTEGRATOR_LABELS = {
   [UNKNOWN_INTEGRATOR]: "Sin asignar",
 };
+const DASHBOARD_GRID_COOKIE = "mismatches_dashboard_grid_order";
+const DASHBOARD_GRID_MIN_SLOTS = 15;
 
 const HELP_SECTIONS = [
   {
@@ -167,9 +169,14 @@ const HELP_SECTIONS = [
     title: 'Vista "Global por concesión"',
     text: "Esta vista desglosa todos los indicadores anteriores de forma individual para cada concesión operativa. Permite identificar qué concesiones presentan mayor número de discrepancias y priorizar las acciones correctoras, facilitando la coordinación con cada operador de forma independiente.",
   },
+  {
+    title: 'Vista "Global por empresa"',
+    text: "Esta vista agrupa las concesiones por empresa operadora y consolida los indicadores para identificar qué empresas concentran mayor volumen de discrepancias.",
+  },
 ];
 
 let globalConcesionesData = [];
+let globalEmpresasData = [];
 let globalConcesionesSort = {
   key: "total",
   direction: "asc",
@@ -177,9 +184,11 @@ let globalConcesionesSort = {
 let globalConcesionesIntegratorFilters = new Set(INTEGRATOR_FILTERS);
 let globalDashboardRows = [];
 let globalIntegratorModalData = [];
+let dashboardDragMoved = false;
 
 document.addEventListener("DOMContentLoaded", async () => {
   setupNavigation();
+  setupDownloadReportButton();
   setupHelpButton();
 
   const page = document.body ? document.body.dataset.page : "";
@@ -194,7 +203,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const csvText = getEmbeddedCsvData();
 
-  if (page === "global-actual") {
+  if (page === "global-actual" || page === "dashboard") {
     renderDashboardFromCsv(csvText);
     return;
   }
@@ -206,6 +215,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (page === "global-concesiones") {
     renderGlobalConcesionesFromCsv(csvText);
+    return;
+  }
+
+  if (page === "global-empresas") {
+    renderGlobalEmpresasFromCsv(csvText);
     return;
   }
 
@@ -425,6 +439,31 @@ function setupHelpButton() {
   actions.appendChild(button);
 }
 
+function setupDownloadReportButton() {
+  const page = document.body ? document.body.dataset.page : "";
+  if (page !== "global-actual") {
+    return;
+  }
+
+  const actions = getTopbarActions();
+  if (!actions || actions.querySelector(".download-report-button")) {
+    return;
+  }
+
+  const link = document.createElement("a");
+  link.className = "download-report-button";
+  link.href = "assets/mismatches-vehiculos.xlsx";
+  link.download = "mismatches-vehiculos.xlsx";
+  link.setAttribute("aria-label", "Descargar Excel de vehículos");
+  link.title = "Descargar Excel de vehículos";
+  link.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3v12M7 10l5 5 5-5M5 21h14"></path>
+    </svg>
+  `;
+  actions.appendChild(link);
+}
+
 function openHelpModal() {
   closeHelpModal();
   const modal = document.createElement("div");
@@ -493,6 +532,7 @@ function combineEmbeddedCsvTexts(...texts) {
     "ExecutionDate",
     "Scope",
     "OrganizationAppId",
+    "CompanyName",
     "Integrator",
     "Metric",
     "AnalysisDate",
@@ -685,7 +725,14 @@ function renderMetricCards(rowByMetric) {
     return;
   }
 
-  grid.innerHTML = METRICS.map((metric) => {
+  if (isDashboardPage()) {
+    renderDashboardGrid(rowByMetric, false);
+    return;
+  }
+
+  const metrics = METRICS;
+  grid.classList.toggle("dashboard-sortable-grid", isDashboardPage());
+  grid.innerHTML = metrics.map((metric) => {
     const row = rowByMetric.get(metric.key);
     const value = toNumber(row && row.SyncPercent);
     const subtext = getMetricCardSubtext(metric, row);
@@ -693,8 +740,15 @@ function renderMetricCards(rowByMetric) {
     const valueText = Number.isFinite(value) ? `${value.toFixed(1)}%` : "N/D";
     const tooltip = metric.tooltip ? ` title="${escapeHtml(metric.tooltip)}"` : "";
 
-    return `
-      <a class="metric-card-link" href="${metric.page}" aria-label="Ver detalle ${escapeHtml(metric.label)}">
+    return renderMetricCard(metric, state, valueText, subtext, tooltip);
+  }).join("");
+
+  setupDashboardGridDragAndDrop(grid);
+}
+
+function renderMetricCard(metric, state, valueText, subtext, tooltip = "") {
+  const link = `
+      <a class="metric-card-link" href="${metric.page}" draggable="false" aria-label="Ver detalle ${escapeHtml(metric.label)}">
         <article class="metric-card ${state}"${tooltip}>
           <div class="card-top">
             <h2 class="metric-name">${escapeHtml(metric.label)}</h2>
@@ -705,7 +759,21 @@ function renderMetricCards(rowByMetric) {
         </article>
       </a>
     `;
-  }).join("");
+
+  if (!isDashboardPage()) {
+    return link;
+  }
+
+  return `
+    <div class="metric-card-shell" draggable="true" data-metric-key="${escapeHtml(metric.key)}">
+      <button class="dashboard-drag-handle" type="button" aria-label="Mover ${escapeHtml(metric.label)}" title="Mover tarjeta">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01"></path>
+        </svg>
+      </button>
+      ${link}
+    </div>
+  `;
 }
 
 function getMetricCardSubtext(metric, row) {
@@ -754,18 +822,230 @@ function renderEmptyCards() {
     return;
   }
 
-  grid.innerHTML = METRICS.map((metric) => `
-    <a class="metric-card-link" href="${metric.page}" aria-label="Ver detalle ${escapeHtml(metric.label)}">
-      <article class="metric-card bad">
-        <div class="card-top">
-          <h2 class="metric-name">${escapeHtml(metric.label)}</h2>
-          <span class="metric-icon">${metric.icon}</span>
-        </div>
-        <p class="metric-value">N/D</p>
-        <p class="metric-subtext">Discrepancias: N/D</p>
-      </article>
-    </a>
+  if (isDashboardPage()) {
+    renderDashboardGrid(new Map(), true);
+    return;
+  }
+
+  grid.classList.remove("dashboard-sortable-grid");
+  grid.innerHTML = METRICS.map((metric) => renderMetricCard(metric, "bad", "N/D", "Discrepancias: N/D")).join("");
+}
+
+function isDashboardPage() {
+  return document.body && document.body.dataset.page === "dashboard";
+}
+
+function renderDashboardGrid(rowByMetric, emptyCards) {
+  const grid = document.getElementById("cardsGrid");
+  if (!grid) {
+    return;
+  }
+
+  const placement = buildDashboardGridPlacement();
+  const maxSlot = Math.max(...Array.from(placement.values()), -1);
+  const slotCount = Math.max(DASHBOARD_GRID_MIN_SLOTS, maxSlot + 1);
+  const cardHtmlBySlot = new Map();
+
+  METRICS.forEach((metric) => {
+    const row = rowByMetric.get(metric.key);
+    const value = toNumber(row && row.SyncPercent);
+    const subtext = emptyCards ? "Discrepancias: N/D" : getMetricCardSubtext(metric, row);
+    const state = emptyCards ? "bad" : getState(value);
+    const valueText = emptyCards || !Number.isFinite(value) ? "N/D" : `${value.toFixed(1)}%`;
+    const tooltip = metric.tooltip ? ` title="${escapeHtml(metric.tooltip)}"` : "";
+    cardHtmlBySlot.set(placement.get(metric.key), renderMetricCard(metric, state, valueText, subtext, tooltip));
+  });
+
+  grid.classList.add("dashboard-sortable-grid");
+  grid.innerHTML = Array.from({ length: slotCount }, (_, index) => `
+    <div class="dashboard-grid-slot ${cardHtmlBySlot.has(index) ? "" : "empty"}" data-slot-index="${index}">
+      ${cardHtmlBySlot.get(index) || renderDashboardEmptySlot()}
+    </div>
   `).join("");
+  setupDashboardGridDragAndDrop(grid);
+}
+
+function renderDashboardEmptySlot() {
+  return '<div class="dashboard-empty-slot" aria-hidden="true"></div>';
+}
+
+function buildDashboardGridPlacement() {
+  const savedLayout = readDashboardGridLayout();
+  const placement = new Map();
+  const usedSlots = new Set();
+
+  METRICS.forEach((metric, defaultIndex) => {
+    let slotIndex = savedLayout.get(metric.key);
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || usedSlots.has(slotIndex)) {
+      slotIndex = getNextFreeDashboardSlot(usedSlots, defaultIndex);
+    }
+    placement.set(metric.key, slotIndex);
+    usedSlots.add(slotIndex);
+  });
+
+  return placement;
+}
+
+function getNextFreeDashboardSlot(usedSlots, preferredIndex = 0) {
+  let slotIndex = Math.max(0, preferredIndex);
+  while (usedSlots.has(slotIndex)) {
+    slotIndex += 1;
+  }
+  return slotIndex;
+}
+
+function setupDashboardGridDragAndDrop(grid) {
+  if (!grid || !isDashboardPage()) {
+    return;
+  }
+
+  grid.querySelectorAll(".metric-card-shell").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      dashboardDragMoved = false;
+      card.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", card.dataset.metricKey || "");
+    });
+
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      grid.querySelectorAll(".dashboard-grid-slot.drop-target").forEach((slot) => slot.classList.remove("drop-target"));
+      saveDashboardGridLayout(grid);
+      setTimeout(() => {
+        dashboardDragMoved = false;
+      }, dashboardDragMoved ? 250 : 0);
+    });
+  });
+
+  if (grid.dataset.dashboardDndInitialized === "true") {
+    return;
+  }
+  grid.dataset.dashboardDndInitialized = "true";
+
+  grid.addEventListener("dragover", (event) => {
+    const dragging = grid.querySelector(".metric-card-shell.dragging");
+    const targetSlot = event.target.closest(".dashboard-grid-slot");
+    if (!dragging || !targetSlot || !grid.contains(targetSlot)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    grid.querySelectorAll(".dashboard-grid-slot.drop-target").forEach((slot) => {
+      if (slot !== targetSlot) {
+        slot.classList.remove("drop-target");
+      }
+    });
+    targetSlot.classList.add("drop-target");
+  });
+
+  grid.addEventListener("dragleave", (event) => {
+    const slot = event.target.closest(".dashboard-grid-slot");
+    if (slot && !slot.contains(event.relatedTarget)) {
+      slot.classList.remove("drop-target");
+    }
+  });
+
+  grid.addEventListener("drop", (event) => {
+    const dragging = grid.querySelector(".metric-card-shell.dragging");
+    const targetSlot = event.target.closest(".dashboard-grid-slot");
+    if (!dragging || !targetSlot || !grid.contains(targetSlot)) {
+      return;
+    }
+
+    event.preventDefault();
+    dashboardDragMoved = true;
+    moveDashboardCardToSlot(grid, dragging, targetSlot);
+    grid.querySelectorAll(".dashboard-grid-slot.drop-target").forEach((slot) => slot.classList.remove("drop-target"));
+    saveDashboardGridLayout(grid);
+  });
+
+  grid.addEventListener("click", (event) => {
+    if (!dashboardDragMoved) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+}
+
+function moveDashboardCardToSlot(grid, draggingCard, targetSlot) {
+  const sourceSlot = draggingCard.closest(".dashboard-grid-slot");
+  if (!sourceSlot || sourceSlot === targetSlot) {
+    return;
+  }
+
+  const targetCard = targetSlot.querySelector(".metric-card-shell");
+  clearDashboardSlot(targetSlot);
+  targetSlot.appendChild(draggingCard);
+  targetSlot.classList.remove("empty");
+
+  clearDashboardSlot(sourceSlot);
+  if (targetCard && targetCard !== draggingCard) {
+    sourceSlot.appendChild(targetCard);
+    sourceSlot.classList.remove("empty");
+  } else {
+    sourceSlot.innerHTML = renderDashboardEmptySlot();
+    sourceSlot.classList.add("empty");
+  }
+
+  normalizeDashboardEmptySlots(grid);
+}
+
+function clearDashboardSlot(slot) {
+  slot.querySelectorAll(".dashboard-empty-slot").forEach((placeholder) => placeholder.remove());
+  slot.querySelectorAll(".metric-card-shell").forEach((card) => card.remove());
+}
+
+function normalizeDashboardEmptySlots(grid) {
+  grid.querySelectorAll(".dashboard-grid-slot").forEach((slot) => {
+    const hasCard = Boolean(slot.querySelector(".metric-card-shell"));
+    slot.classList.toggle("empty", !hasCard);
+    if (!hasCard && !slot.querySelector(".dashboard-empty-slot")) {
+      slot.innerHTML = renderDashboardEmptySlot();
+    }
+  });
+}
+
+function saveDashboardGridLayout(grid) {
+  const layout = {};
+  grid.querySelectorAll(".dashboard-grid-slot").forEach((slot) => {
+    const card = slot.querySelector(".metric-card-shell");
+    const key = card && card.dataset.metricKey;
+    const index = Number(slot.dataset.slotIndex);
+    if (key && Number.isInteger(index)) {
+      layout[key] = index;
+    }
+  });
+  writeCookie(DASHBOARD_GRID_COOKIE, JSON.stringify(layout), 365);
+}
+
+function readDashboardGridLayout() {
+  const rawValue = readCookie(DASHBOARD_GRID_COOKIE);
+  if (!rawValue) {
+    return new Map();
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (Array.isArray(parsed)) {
+      return new Map(parsed
+        .filter((key) => METRIC_BY_KEY.has(key))
+        .map((key, index) => [key, index]));
+    }
+    if (parsed && typeof parsed === "object") {
+      return new Map(Object.entries(parsed)
+        .filter(([key, value]) => METRIC_BY_KEY.has(key) && Number.isInteger(Number(value)))
+        .map(([key, value]) => [key, Number(value)]));
+    }
+  } catch (error) {
+    return new Map(rawValue
+      .split("|")
+      .filter((key) => METRIC_BY_KEY.has(key))
+      .map((key, index) => [key, index]));
+  }
+
+  return new Map();
 }
 
 function renderEvolutionFromCsv(csvText) {
@@ -970,6 +1250,102 @@ function renderGlobalConcesionesFromCsv(csvText) {
   renderGlobalConcesionesTable();
 }
 
+function renderGlobalEmpresasFromCsv(csvText) {
+  const rows = parseCsv(csvText);
+  const orgRows = rows.filter((row) => normalize(row.Scope) === "ORG");
+
+  if (!orgRows.length) {
+    showStatus("No hay filas ORG en el CSV.");
+    renderEmptyGlobalEmpresas();
+    return;
+  }
+
+  const latestRows = getLatestRowsByOrgAndMetric(orgRows);
+  const rowByOrg = new Map();
+
+  latestRows.forEach((row) => {
+    const org = String(row.OrganizationAppId || "").trim();
+    if (!org) {
+      return;
+    }
+
+    if (!rowByOrg.has(org)) {
+      rowByOrg.set(org, new Map());
+    }
+    rowByOrg.get(org).set(row.Metric, row);
+  });
+
+  const orgData = Array.from(rowByOrg.entries())
+    .map(([org, metrics]) => ({
+      org,
+      companyName: getCompanyNameFromMetricRows(metrics),
+      integrator: getIntegratorFromMetricRows(metrics),
+      metrics,
+    }));
+
+  const data = buildGlobalEmpresaRows(orgData);
+  const latestExecution = getLatestExecution(latestRows);
+
+  hideStatus();
+  globalEmpresasData = data;
+  globalConcesionesSort = { key: "total", direction: "asc" };
+  globalConcesionesIntegratorFilters = new Set(INTEGRATOR_FILTERS);
+  renderGlobalEmpresasSummary(latestExecution, data);
+  renderGlobalConcesionesIntegratorFilters(data);
+  renderGlobalEmpresasTable();
+}
+
+function buildGlobalEmpresaRows(orgData) {
+  const rowByCompany = new Map();
+
+  orgData.forEach((orgRow) => {
+    const companyName = normalizeCompanyName(orgRow.companyName);
+    if (!rowByCompany.has(companyName)) {
+      rowByCompany.set(companyName, {
+        companyName,
+        orgs: [],
+        integrators: [],
+        metricRows: new Map(),
+      });
+    }
+
+    const companyRow = rowByCompany.get(companyName);
+    companyRow.orgs.push(orgRow.org);
+    companyRow.integrators.push(orgRow.integrator);
+    METRICS.forEach((metric) => {
+      const metricRow = orgRow.metrics.get(metric.key);
+      if (!metricRow) {
+        return;
+      }
+      if (!companyRow.metricRows.has(metric.key)) {
+        companyRow.metricRows.set(metric.key, []);
+      }
+      companyRow.metricRows.get(metric.key).push(metricRow);
+    });
+  });
+
+  return Array.from(rowByCompany.values()).map((companyRow) => {
+    const metrics = new Map();
+    METRICS.forEach((metric) => {
+      const metricRows = companyRow.metricRows.get(metric.key) || [];
+      if (metricRows.length) {
+        metrics.set(metric.key, aggregateMetricRows(metric, metricRows));
+      }
+    });
+
+    const orgs = Array.from(new Set(companyRow.orgs)).sort((left, right) => left.localeCompare(right));
+    return {
+      companyName: companyRow.companyName,
+      orgs,
+      orgCount: orgs.length,
+      integrator: combineIntegratorValues(companyRow.integrators),
+      metrics,
+      totalPercent: getTotalMetricPercent(metrics),
+      totalMismatches: getTotalMismatches(metrics),
+    };
+  });
+}
+
 function compareGlobalConcesionRows(left, right, sortConfig = globalConcesionesSort) {
   const direction = sortConfig.direction === "desc" ? -1 : 1;
   let result = 0;
@@ -986,6 +1362,29 @@ function compareGlobalConcesionRows(left, right, sortConfig = globalConcesionesS
 
   if (result === 0) {
     result = left.org.localeCompare(right.org);
+  }
+
+  return result * direction;
+}
+
+function compareGlobalEmpresaRows(left, right, sortConfig = globalConcesionesSort) {
+  const direction = sortConfig.direction === "desc" ? -1 : 1;
+  let result = 0;
+
+  if (sortConfig.key === "company") {
+    result = left.companyName.localeCompare(right.companyName);
+  } else if (sortConfig.key === "concessions") {
+    result = compareNullableNumbers(left.orgCount, right.orgCount);
+  } else if (sortConfig.key === "integrator") {
+    result = left.integrator.localeCompare(right.integrator);
+  } else {
+    const leftValue = getGlobalSortValue(left, sortConfig.key);
+    const rightValue = getGlobalSortValue(right, sortConfig.key);
+    result = compareNullableNumbers(leftValue, rightValue);
+  }
+
+  if (result === 0) {
+    result = left.companyName.localeCompare(right.companyName);
   }
 
   return result * direction;
@@ -1107,6 +1506,20 @@ function renderGlobalConcesionesSummary(executionDate, data) {
   summary.textContent = `Ultima ejecucion: ${formatExecutionDate(executionDate)} | ${data.length} concesiones | ${affected} con total por debajo de 100% | ${integratorSummary}`;
 }
 
+function renderGlobalEmpresasSummary(executionDate, data) {
+  const summary = document.getElementById("globalEmpresasSummary");
+  if (!summary) {
+    return;
+  }
+
+  const affected = data.filter((row) => Number.isFinite(row.totalPercent) && row.totalPercent < 100).length;
+  const concessionCount = data.reduce((total, row) => total + row.orgCount, 0);
+  const integratorSummary = INTEGRATOR_FILTERS
+    .map((filter) => `${formatIntegratorLabel(filter)}: ${countRowsByIntegrator(data, filter)}`)
+    .join(" | ");
+  summary.textContent = `Ultima ejecucion: ${formatExecutionDate(executionDate)} | ${data.length} empresas | ${concessionCount} concesiones | ${affected} con total por debajo de 100% | ${integratorSummary}`;
+}
+
 function renderGlobalConcesionesTable() {
   const container = document.getElementById("globalConcesionesTable");
   if (!container) {
@@ -1131,6 +1544,44 @@ function renderGlobalConcesionesTable() {
       <thead>
         <tr>
           ${renderSortableHeader("org", "Concesion")}
+          ${renderSortableHeader("integrator", "Integrador")}
+          ${renderSortableHeader("total", "Total")}
+          ${headers}
+        </tr>
+      </thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+
+  setupGlobalConcesionesSorting(container);
+}
+
+function renderGlobalEmpresasTable() {
+  const container = document.getElementById("globalEmpresasTable");
+  if (!container) {
+    return;
+  }
+
+  const data = globalEmpresasData
+    .filter((row) => rowMatchesIntegratorFilters(row, globalConcesionesIntegratorFilters))
+    .sort((left, right) => compareGlobalEmpresaRows(left, right));
+  const headers = METRICS.map((metric) => renderSortableHeader(metric.key, metric.label)).join("");
+  const body = data.map((row) => `
+    <tr>
+      <th scope="row" class="org-cell company-cell">${escapeHtml(row.companyName)}</th>
+      <td class="concession-count-cell" title="${escapeHtml(row.orgs.join(", "))}">${formatCount(row.orgCount)}</td>
+      <td class="integrator-cell">${renderIntegratorBadges(row.integrator)}</td>
+      ${renderGlobalTotalCell(row)}
+      ${METRICS.map((metric) => renderGlobalMetricCell(row.metrics.get(metric.key), metric)).join("")}
+    </tr>
+  `).join("");
+
+  container.innerHTML = `
+    <table class="global-table">
+      <thead>
+        <tr>
+          ${renderSortableHeader("company", "Empresa")}
+          ${renderSortableHeader("concessions", "Concesiones")}
           ${renderSortableHeader("integrator", "Integrador")}
           ${renderSortableHeader("total", "Total")}
           ${headers}
@@ -1177,13 +1628,14 @@ function setupIntegratorModalOpen(container) {
 
 function openIntegratorModal(data) {
   closeIntegratorModal();
+  const title = isGlobalEmpresasPage() ? "Empresas por integrador" : "Concesiones por integrador";
   const modal = document.createElement("div");
   modal.className = "integrator-modal-backdrop";
   modal.dataset.integratorModal = "true";
   modal.innerHTML = `
     <section class="integrator-modal" role="dialog" aria-modal="true" aria-labelledby="integratorModalTitle">
       <div class="integrator-modal-header">
-        <h2 id="integratorModalTitle">Concesiones por integrador</h2>
+        <h2 id="integratorModalTitle">${escapeHtml(title)}</h2>
         <button class="modal-close-button" type="button" data-integrator-modal-close aria-label="Cerrar">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6 6l12 12M18 6L6 18"></path>
@@ -1219,23 +1671,27 @@ function handleIntegratorModalKeydown(event) {
 
 function renderIntegratorModalGroups(data) {
   return INTEGRATOR_FILTERS.map((filter) => {
-    const orgs = data
+    const items = data
       .filter((row) => getIntegratorTokens(row.integrator).includes(filter))
-      .map((row) => row.org)
+      .map((row) => getIntegratorModalRowLabel(row))
       .filter(Boolean)
       .sort((left, right) => left.localeCompare(right));
 
     return `
       <section class="integrator-modal-group">
-        <h3>${escapeHtml(formatIntegratorLabel(filter))} <span>${orgs.length}</span></h3>
-        ${orgs.length ? `
+        <h3>${escapeHtml(formatIntegratorLabel(filter))} <span>${items.length}</span></h3>
+        ${items.length ? `
           <div class="integrator-org-list">
-            ${orgs.map((org) => `<span class="integrator-org">${escapeHtml(org)}</span>`).join("")}
+            ${items.map((item) => `<span class="integrator-org">${escapeHtml(item)}</span>`).join("")}
           </div>
-        ` : '<p class="integrator-modal-empty">Sin concesiones.</p>'}
+        ` : `<p class="integrator-modal-empty">Sin ${isGlobalEmpresasPage() ? "empresas" : "concesiones"}.</p>`}
       </section>
     `;
   }).join("");
+}
+
+function getIntegratorModalRowLabel(row) {
+  return String((row && (row.companyName || row.org)) || "").trim();
 }
 
 function renderSortableHeader(key, label) {
@@ -1264,7 +1720,11 @@ function setupGlobalConcesionesSorting(container) {
         globalConcesionesSort = { key, direction: "asc" };
       }
 
-      renderGlobalConcesionesTable();
+      if (isGlobalEmpresasPage()) {
+        renderGlobalEmpresasTable();
+      } else {
+        renderGlobalConcesionesTable();
+      }
     });
   });
 }
@@ -1278,8 +1738,10 @@ function setupGlobalConcesionesIntegratorFilters(container) {
         selected.add(checkedCheckbox.value);
       });
       globalConcesionesIntegratorFilters = selected;
-      if (document.body && document.body.dataset.page === "global-actual") {
+      if (document.body && (document.body.dataset.page === "global-actual" || document.body.dataset.page === "dashboard")) {
         renderDashboardCardsForCurrentFilters();
+      } else if (isGlobalEmpresasPage()) {
+        renderGlobalEmpresasTable();
       } else {
         renderGlobalConcesionesTable();
       }
@@ -1332,6 +1794,18 @@ function getGrayGradientStyle(value) {
 function renderEmptyGlobalConcesiones() {
   const container = document.getElementById("globalConcesionesTable");
   const summary = document.getElementById("globalConcesionesSummary");
+
+  if (summary) {
+    summary.textContent = "Pendiente de datos";
+  }
+  if (container) {
+    container.innerHTML = '<div class="empty-chart">Sin datos para pintar la tabla.</div>';
+  }
+}
+
+function renderEmptyGlobalEmpresas() {
+  const container = document.getElementById("globalEmpresasTable");
+  const summary = document.getElementById("globalEmpresasSummary");
 
   if (summary) {
     summary.textContent = "Pendiente de datos";
@@ -1582,6 +2056,34 @@ function getIntegratorFromMetricRows(metricRows) {
   return fallback;
 }
 
+function getCompanyNameFromMetricRows(metricRows) {
+  for (const row of metricRows.values()) {
+    const companyName = String(row && row.CompanyName || "").trim();
+    if (companyName) {
+      return companyName;
+    }
+  }
+  return normalizeCompanyName("");
+}
+
+function normalizeCompanyName(value) {
+  return String(value || "").trim() || "Sin empresa";
+}
+
+function combineIntegratorValues(values) {
+  const tokenSet = new Set();
+  (values || []).forEach((value) => {
+    getIntegratorTokens(value).forEach((token) => tokenSet.add(token));
+  });
+
+  const tokens = INTEGRATOR_FILTERS.filter((token) => tokenSet.has(token));
+  return tokens.length ? tokens.join("/") : UNKNOWN_INTEGRATOR;
+}
+
+function isGlobalEmpresasPage() {
+  return document.body && document.body.dataset.page === "global-empresas";
+}
+
 function getRowIntegrator(row) {
   const value = String(row && row.Integrator || "").trim();
   return value || UNKNOWN_INTEGRATOR;
@@ -1631,6 +2133,25 @@ function getIntegratorClass(value) {
     return "proconsi";
   }
   return "unknown";
+}
+
+function readCookie(name) {
+  const prefix = `${encodeURIComponent(name)}=`;
+  const rawValue = document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix))
+    ?.slice(prefix.length) || "";
+  try {
+    return decodeURIComponent(rawValue);
+  } catch (error) {
+    return rawValue;
+  }
+}
+
+function writeCookie(name, value, maxAgeDays) {
+  const maxAge = Math.max(1, Number(maxAgeDays) || 365) * 24 * 60 * 60;
+  document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; max-age=${maxAge}; path=/; SameSite=Lax`;
 }
 
 function formatCount(value) {
