@@ -27,7 +27,7 @@ const METRICS = [
     summaryId: "vehiculosActivosSummary",
     chartId: "vehiculosActivosChart",
     label: "Vehículos activos",
-    tooltip: "Porcentaje de vehiculos con alguna posición recibida en N5 en los ultimos 7 dias",
+    tooltip: "Porcentaje de vehículos instalados con alguna posición recibida en N5 en los últimos 7 días",
     color: "#0f9d58",
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h5l2 3 4-8 2 5h5"></path></svg>'
   },
@@ -38,7 +38,7 @@ const METRICS = [
     summaryId: "vehiculosTicketingN3Summary",
     chartId: "vehiculosTicketingN3Chart",
     label: "Vehículos ticketing N3",
-    tooltip: "Porcentaje de vehiculos con alguna validación en N3 en los ultimos 7 dias",
+    tooltip: "Porcentaje de vehículos instalados con alguna validación en N3 en los últimos 7 días",
     color: "#2563eb",
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M6 7v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7M8 11h4M8 15h8M16 4v6"></path></svg>'
   },
@@ -49,7 +49,7 @@ const METRICS = [
     summaryId: "vehiculosTicketingSummary",
     chartId: "vehiculosTicketingChart",
     label: "Vehículos ticketing N5",
-    tooltip: "Porcentaje de vehiculos con alguna validación en N5 en los ultimos 7 dias",
+    tooltip: "Porcentaje de vehículos instalados con alguna validación en N5 en los últimos 7 días",
     color: "#2563eb",
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M6 7v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7M8 11h4M8 15h8M16 4v6"></path></svg>'
   },
@@ -143,11 +143,11 @@ const HELP_SECTIONS = [
   },
   {
     title: "Vehículos ticketing N3",
-    text: "Porcentaje de vehículos del parque total que han generado datos de validación registrados en el sistema de ticketing N3. Un valor bajo puede indicar que parte de la flota no ha generado validaciones recientes o que hay incidencias en la transmisión de eventos de validación.",
+    text: "Porcentaje de vehículos instalados que han generado datos de validación registrados en el sistema de ticketing N3. Un valor bajo puede indicar que parte de la flota instalada no ha generado validaciones recientes o que hay incidencias en la transmisión de eventos de validación.",
   },
   {
     title: "Vehículos ticketing N5",
-    text: "Porcentaje de vehículos del parque total que han generado datos de validación registrados en el módulo de ticketing N5. Un valor bajo puede indicar que parte de la flota aún no opera con el sistema de validación integrado o que hay incidencias en la transmisión de eventos de validación.",
+    text: "Porcentaje de vehículos instalados que han generado datos de validación registrados en el módulo de ticketing N5. Un valor bajo puede indicar que parte de la flota instalada no opera con el sistema de validación integrado o que hay incidencias en la transmisión de eventos de validación.",
   },
   {
     title: "Conductores",
@@ -201,6 +201,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
+  await refreshEmbeddedDataScripts(page);
   const csvText = getEmbeddedCsvData();
 
   if (page === "global-actual" || page === "dashboard") {
@@ -209,7 +210,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (page === "global-evolucion") {
-    renderEvolutionFromCsv(csvText);
+    renderEvolutionFromCsv(getEmbeddedHistoryCsvData() || csvText);
     return;
   }
 
@@ -229,6 +230,40 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderMetricBarsFromCsv(csvText, metric);
   }
 });
+
+async function refreshEmbeddedDataScripts(page) {
+  const currentFiles = [
+    "mismatches-data.js",
+    "siri-data.js",
+    "ticketing-data.js",
+  ];
+  const historyFiles = page === "global-evolucion" ? [
+    "mismatches-history-data.js",
+    "siri-history-data.js",
+    "ticketing-history-data.js",
+  ] : [];
+
+  await Promise.all([...currentFiles, ...historyFiles].map(loadDataScriptNoCache));
+}
+
+function loadDataScriptNoCache(fileName) {
+  return new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = buildAssetUrl(`assets/${fileName}`);
+    script.async = false;
+    script.onload = resolve;
+    script.onerror = resolve;
+    document.head.appendChild(script);
+  });
+}
+
+function buildAssetUrl(path) {
+  if (window.location && window.location.protocol === "file:") {
+    return path;
+  }
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}v=${Date.now()}`;
+}
 
 async function ensureAuthenticated() {
   const auth = getAuthConfig();
@@ -451,11 +486,15 @@ function setupDownloadReportButton() {
   }
 
   const link = document.createElement("a");
+  const reportPath = "assets/mismatches-vehiculos.xlsx";
   link.className = "download-report-button";
-  link.href = "assets/mismatches-vehiculos.xlsx";
+  link.href = buildAssetUrl(reportPath);
   link.download = "mismatches-vehiculos.xlsx";
   link.setAttribute("aria-label", "Descargar Excel de vehículos");
   link.title = "Descargar Excel de vehículos";
+  link.addEventListener("click", () => {
+    link.href = buildAssetUrl(reportPath);
+  });
   link.innerHTML = `
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 3v12M7 10l5 5 5-5M5 21h14"></path>
@@ -516,6 +555,14 @@ function getEmbeddedCsvData() {
     typeof window.MISMATCHES_CSV === "string" ? window.MISMATCHES_CSV : "",
     typeof window.SIRI_CSV === "string" ? window.SIRI_CSV : "",
     typeof window.TICKETING_CSV === "string" ? window.TICKETING_CSV : ""
+  );
+}
+
+function getEmbeddedHistoryCsvData() {
+  return combineEmbeddedCsvTexts(
+    typeof window.MISMATCHES_HISTORY_CSV === "string" ? window.MISMATCHES_HISTORY_CSV : "",
+    typeof window.SIRI_HISTORY_CSV === "string" ? window.SIRI_HISTORY_CSV : "",
+    typeof window.TICKETING_HISTORY_CSV === "string" ? window.TICKETING_HISTORY_CSV : ""
   );
 }
 
@@ -657,15 +704,18 @@ function aggregateMetricRows(metric, rows, globalRow) {
   if (isRatioMetric(metric.key)) {
     const rawNumerator = sumRatioNumerator(rows, metric.key);
     const numerator = capAggregateCount(rawNumerator, toNumber(globalRow && globalRow[RATIO_METRIC_FIELDS[metric.key]]));
-    if (Number.isFinite(numerator) && Number.isFinite(total) && total > 0) {
-      const boundedNumerator = getBoundedRatioNumerator(numerator, total);
-      const percentDenominator = Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : total;
+    const rawDenominator = sumRatioDenominator(rows, metric.key);
+    const globalDenominator = getRatioDenominator(globalRow, metric.key);
+    const denominator = capAggregateCount(rawDenominator, globalDenominator);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator > 0) {
+      const boundedNumerator = getBoundedRatioNumerator(numerator, denominator);
+      const percentDenominator = Number.isFinite(rawDenominator) && rawDenominator > 0 ? rawDenominator : denominator;
       const percentNumerator = Number.isFinite(rawNumerator)
         ? getBoundedRatioNumerator(rawNumerator, percentDenominator)
         : boundedNumerator;
       row[RATIO_METRIC_FIELDS[metric.key]] = String(boundedNumerator);
       row.SyncPercent = ((percentNumerator / percentDenominator) * 100).toFixed(1);
-      row.MismatchCount = String(Math.max(total - boundedNumerator, 0));
+      row.MismatchCount = String(Math.max(denominator - boundedNumerator, 0));
     }
     return row;
   }
@@ -708,6 +758,16 @@ function sumNumberField(rows, fieldName) {
 function sumRatioNumerator(rows, metricKey) {
   const values = rows
     .map((row) => getRatioNumerator(row, metricKey))
+    .filter(Number.isFinite);
+  if (!values.length) {
+    return NaN;
+  }
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function sumRatioDenominator(rows, metricKey) {
+  const values = rows
+    .map((row) => getRatioDenominator(row, metricKey))
     .filter(Number.isFinite);
   if (!values.length) {
     return NaN;
@@ -797,19 +857,17 @@ function getMetricCardSubtext(metric, row) {
   if (metric.key === "VehiculosActivos") {
     const activeCount = toNumber(row && row.ActiveCount);
     const installedCount = toNumber(row && row.InstalledCount);
-    const totalCount = toNumber(row && row.TotalCount);
     const activeText = Number.isFinite(activeCount) ? activeCount : "N/D";
     const installedText = Number.isFinite(installedCount) ? installedCount : "N/D";
-    const totalText = Number.isFinite(totalCount) ? totalCount : "N/D";
-    return `Activos: ${activeText} | Instalados: ${installedText} | Total: ${totalText}`;
+    return `Activos: ${activeText} | Instalados: ${installedText}`;
   }
 
   if (metric.key === "VehiculosTicketingN3" || metric.key === "VehiculosTicketing") {
     const activeCount = toNumber(row && row.ActiveCount);
-    const totalCount = toNumber(row && row.TotalCount);
+    const installedCount = toNumber(row && row.InstalledCount);
     const activeText = Number.isFinite(activeCount) ? activeCount : "N/D";
-    const totalText = Number.isFinite(totalCount) ? totalCount : "N/D";
-    return `Con validación: ${activeText} | Total: ${totalText}`;
+    const installedText = Number.isFinite(installedCount) ? installedCount : "N/D";
+    return `Con validación: ${activeText} | Instalados: ${installedText}`;
   }
 
   const mismatchCount = row ? row.MismatchCount || "0" : "N/D";
@@ -1851,7 +1909,7 @@ function renderMetricBarsFromCsv(csvText, metric) {
       mismatches: toNumber(row.MismatchCount),
       ratioText: formatMetricDetailText(row, metric.key),
       ratioNumerator: getRatioNumerator(row, metric.key),
-      ratioDenominator: toNumber(row.TotalCount),
+      ratioDenominator: getRatioDenominator(row, metric.key),
     }))
     .filter((item) => item.org && Number.isFinite(item.percent))
     .sort(compareBarRowsByAscendingPercent);
@@ -1966,7 +2024,7 @@ function formatDiscrepancias(value) {
 function getMetricPercent(row, metricKey) {
   if (isRatioMetric(metricKey)) {
     const numerator = getRatioNumerator(row, metricKey);
-    const denominator = toNumber(row && row.TotalCount);
+    const denominator = getRatioDenominator(row, metricKey);
     if (!Number.isFinite(denominator) || denominator <= 0) {
       return 0;
     }
@@ -1994,6 +2052,16 @@ function getRatioNumerator(row, metricKey) {
   return field ? toNumber(row && row[field]) : NaN;
 }
 
+function getRatioDenominator(row, metricKey) {
+  if (metricKey === "VehiculosActivos" || metricKey === "VehiculosTicketingN3" || metricKey === "VehiculosTicketing") {
+    const installed = toNumber(row && row.InstalledCount);
+    if (Number.isFinite(installed)) {
+      return installed;
+    }
+  }
+  return toNumber(row && row.TotalCount);
+}
+
 function getBoundedRatioNumerator(numerator, denominator) {
   if (!Number.isFinite(numerator)) {
     return NaN;
@@ -2010,7 +2078,7 @@ function formatMetricDetailText(row, metricKey) {
   }
 
   const numerator = getRatioNumerator(row, metricKey);
-  const denominator = toNumber(row && row.TotalCount);
+  const denominator = getRatioDenominator(row, metricKey);
   if (!Number.isFinite(denominator)) {
     return "Sin dato";
   }
