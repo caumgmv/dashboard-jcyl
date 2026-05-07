@@ -54,6 +54,39 @@ const METRICS = [
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M6 7v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7M8 11h4M8 15h8M16 4v6"></path></svg>'
   },
   {
+    key: "VehiculosFmsN3",
+    page: "vehiculos-fms-n3.html",
+    pageId: "vehiculos-fms-n3",
+    summaryId: "vehiculosFmsN3Summary",
+    chartId: "vehiculosFmsN3Chart",
+    label: "Vehículos FMS N3",
+    tooltip: "Porcentaje de vehículos instalados con detecciones de parada FMS N3 según el umbral configurado",
+    color: "#0e7490",
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.2 6-11a6 6 0 0 0-12 0c0 5.8 6 11 6 11zM9 10h6M12 7v6"></path></svg>'
+  },
+  {
+    key: "VehiculosFmsN5",
+    page: "vehiculos-fms-n5.html",
+    pageId: "vehiculos-fms-n5",
+    summaryId: "vehiculosFmsN5Summary",
+    chartId: "vehiculosFmsN5Chart",
+    label: "Vehículos FMS N5",
+    tooltip: "Porcentaje de vehículos instalados con detecciones de parada FMS N5 según el umbral configurado",
+    color: "#0891b2",
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.2 6-11a6 6 0 0 0-12 0c0 5.8 6 11 6 11zM9 10h6M12 7v6"></path></svg>'
+  },
+  {
+    key: "VehiculosHistoricosN5",
+    page: "vehiculos-historicos-n5.html",
+    pageId: "vehiculos-historicos-n5",
+    summaryId: "vehiculosHistoricosN5Summary",
+    chartId: "vehiculosHistoricosN5Chart",
+    label: "Vehículos con históricos en N5",
+    tooltip: "Porcentaje de vehículos instalados con detecciones de parada históricas en N5 según el umbral configurado",
+    color: "#9333ea",
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 7v5l3 2"></path></svg>'
+  },
+  {
     key: "Conductores",
     page: "conductores.html",
     pageId: "conductores",
@@ -118,6 +151,9 @@ const RATIO_METRIC_FIELDS = {
   VehiculosActivos: "ActiveCount",
   VehiculosTicketingN3: "ActiveCount",
   VehiculosTicketing: "ActiveCount",
+  VehiculosFmsN3: "ActiveCount",
+  VehiculosFmsN5: "ActiveCount",
+  VehiculosHistoricosN5: "ActiveCount",
 };
 
 const UNKNOWN_INTEGRATOR = "Desconocido";
@@ -148,6 +184,14 @@ const HELP_SECTIONS = [
   {
     title: "Vehículos ticketing N5",
     text: "Porcentaje de vehículos instalados que han generado datos de validación registrados en el módulo de ticketing N5. Un valor bajo puede indicar que parte de la flota instalada no opera con el sistema de validación integrado o que hay incidencias en la transmisión de eventos de validación.",
+  },
+  {
+    title: "Vehículos FMS N3 / N5",
+    text: "Porcentaje de vehículos instalados con al menos el número mínimo configurado de detecciones de parada en FacTravel durante la ventana de análisis configurada. Por defecto se exige un mínimo de 10 detecciones con ActualArrivalTime informado en los últimos 7 días. N3 se consulta en databaseN3.databaseDWH y N5 en databaseN5.databaseDWH.",
+  },
+  {
+    title: "Vehículos con históricos en N5",
+    text: "Porcentaje de vehículos instalados con al menos el número mínimo configurado de detecciones de parada históricas en ExternalSourceTravel durante la misma ventana de análisis. Por defecto se exige un mínimo de 10 detecciones con RealArrivalTime informado en los últimos 7 días en databaseN5.databaseODWH.",
   },
   {
     title: "Conductores",
@@ -868,6 +912,22 @@ function getMetricCardSubtext(metric, row) {
     const activeText = Number.isFinite(activeCount) ? activeCount : "N/D";
     const installedText = Number.isFinite(installedCount) ? installedCount : "N/D";
     return `Con validación: ${activeText} | Instalados: ${installedText}`;
+  }
+
+  if (metric.key === "VehiculosFmsN3" || metric.key === "VehiculosFmsN5") {
+    const activeCount = toNumber(row && row.ActiveCount);
+    const installedCount = toNumber(row && row.InstalledCount);
+    const activeText = Number.isFinite(activeCount) ? activeCount : "N/D";
+    const installedText = Number.isFinite(installedCount) ? installedCount : "N/D";
+    return `Con FMS: ${activeText} | Instalados: ${installedText}`;
+  }
+
+  if (metric.key === "VehiculosHistoricosN5") {
+    const activeCount = toNumber(row && row.ActiveCount);
+    const installedCount = toNumber(row && row.InstalledCount);
+    const activeText = Number.isFinite(activeCount) ? activeCount : "N/D";
+    const installedText = Number.isFinite(installedCount) ? installedCount : "N/D";
+    return `Con históricos: ${activeText} | Instalados: ${installedText}`;
   }
 
   const mismatchCount = row ? row.MismatchCount || "0" : "N/D";
@@ -2053,7 +2113,14 @@ function getRatioNumerator(row, metricKey) {
 }
 
 function getRatioDenominator(row, metricKey) {
-  if (metricKey === "VehiculosActivos" || metricKey === "VehiculosTicketingN3" || metricKey === "VehiculosTicketing") {
+  if (
+    metricKey === "VehiculosActivos"
+    || metricKey === "VehiculosTicketingN3"
+    || metricKey === "VehiculosTicketing"
+    || metricKey === "VehiculosFmsN3"
+    || metricKey === "VehiculosFmsN5"
+    || metricKey === "VehiculosHistoricosN5"
+  ) {
     const installed = toNumber(row && row.InstalledCount);
     if (Number.isFinite(installed)) {
       return installed;

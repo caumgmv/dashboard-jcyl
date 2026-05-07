@@ -3,16 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vehículos activos - Mismatches N3 N5</title>
+  <title>Vehículos FMS N3 - Mismatches N3 N5</title>
   <link rel="stylesheet" href="assets/styles.css?v=20260430-08">
   <script src="assets/dashboard-config.js?v=20260429-16"></script>
   <script src="assets/mismatches-data.js?v=20260430-01"></script>
   <script src="assets/siri-data.js?v=20260430-01"></script>
   <script src="assets/ticketing-data.js?v=20260430-01"></script>
-  <script src="assets/siri-detail.js?v=20260429-16"></script>
   <script src="assets/app.js?v=20260506-01" defer></script>
 </head>
-<body data-page="vehiculos-activos">
+<body data-page="vehiculos-fms-n3">
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-hidden="true">
 
@@ -25,10 +24,11 @@
         <a class="nav-link" href="global-empresas.html">Global empresas</a>
         <a class="nav-link" href="conductores.html">Conductores</a>
         <a class="nav-link" href="vehiculos.html">Vehículos</a>
-        <a class="nav-link active" href="vehiculos-activos.html">Vehículos activos</a>
+        <a class="nav-link" href="vehiculos-instalados.html">Vehículos instalados</a>
+        <a class="nav-link" href="vehiculos-activos.html">Vehículos activos</a>
         <a class="nav-link" href="vehiculos-ticketing-n3.html">Vehículos ticketing N3</a>
         <a class="nav-link" href="vehiculos-ticketing.html">Vehículos ticketing N5</a>
-        <a class="nav-link" href="vehiculos-fms-n3.html">Vehículos FMS N3</a>
+        <a class="nav-link active" href="vehiculos-fms-n3.html">Vehículos FMS N3</a>
         <a class="nav-link" href="vehiculos-fms-n5.html">Vehículos FMS N5</a>
         <a class="nav-link" href="vehiculos-historicos-n5.html">Vehículos históricos N5</a>
         <a class="nav-link" href="topologia.html">Topología</a>
@@ -48,8 +48,8 @@
           </svg>
         </button>
         <div>
-          <h1>Vehículos activos por concesión</h1>
-          <p id="vehiculosActivosSummary">Pendiente de datos</p>
+          <h1>Vehículos FMS N3 por concesión</h1>
+          <p id="vehiculosFmsN3Summary">Pendiente de datos</p>
         </div>
       </header>
 
@@ -57,12 +57,13 @@
         <p id="statusText"></p>
       </section>
 
-      <section class="chart-panel" aria-label="Vehículos activos">
-        <p class="chart-note">Porcentaje de vehículos instalados con alguna posición recibida en N5 en los últimos 7 días</p>
-        <div class="chart-wrap" id="vehiculosActivosChart"></div>
+      <section class="chart-panel" aria-label="Vehículos FMS N3">
+        <p class="chart-note">Porcentaje de vehículos instalados con detecciones de parada FMS N3 según el umbral configurado</p>
+        <div class="chart-wrap" id="vehiculosFmsN3Chart"></div>
       </section>
     </main>
   </div>
 </body>
 </html>
+
 
