@@ -959,16 +959,50 @@ function renderGlobalActualCards(rowByMetric, emptyCards) {
 
   grid.classList.remove("dashboard-sortable-grid");
   grid.classList.add("global-columns-grid");
-  grid.innerHTML = GLOBAL_ACTUAL_COLUMNS.map((column) => `
-    <section class="global-metric-column global-metric-column-${column.tone}" aria-label="${escapeHtml(column.title)}">
+  grid.innerHTML = GLOBAL_ACTUAL_COLUMNS.map((column) => {
+    const columnScore = getGlobalColumnScore(column, rowByMetric, emptyCards);
+    return `
+    <section class="global-metric-column global-metric-column-${column.tone} ${columnScore.state}" aria-label="${escapeHtml(column.title)}">
       <div class="global-metric-column-header">
         <h2>${escapeHtml(column.title)}</h2>
+        <span class="global-column-score">${escapeHtml(columnScore.text)}</span>
       </div>
       <div class="global-metric-column-cards">
         ${column.metrics.map((metricKey) => renderGlobalActualCard(metricKey, rowByMetric, emptyCards)).join("")}
       </div>
     </section>
-  `).join("");
+  `;
+  }).join("");
+}
+
+function getGlobalColumnScore(column, rowByMetric, emptyCards) {
+  if (emptyCards) {
+    return {
+      state: "bad",
+      text: "N/D",
+    };
+  }
+
+  const values = column.metrics
+    .filter((metricKey) => !VEHICLE_TOTAL_CARDS.has(metricKey))
+    .map((metricKey) => {
+      const metric = METRIC_BY_KEY.get(metricKey);
+      return metric ? toNumber(rowByMetric.get(metric.key) && rowByMetric.get(metric.key).SyncPercent) : NaN;
+    })
+    .filter(Number.isFinite);
+
+  if (!values.length) {
+    return {
+      state: "bad",
+      text: "N/D",
+    };
+  }
+
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return {
+    state: getState(average),
+    text: `${average.toFixed(1)}%`,
+  };
 }
 
 function renderGlobalActualCard(metricKey, rowByMetric, emptyCards) {
