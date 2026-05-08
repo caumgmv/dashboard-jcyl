@@ -140,6 +140,46 @@ const METRICS = [
 
 const METRIC_BY_PAGE = new Map(METRICS.map((metric) => [metric.pageId, metric]));
 const METRIC_BY_KEY = new Map(METRICS.map((metric) => [metric.key, metric]));
+const VEHICLE_ICON = METRIC_BY_KEY.get("Vehiculos").icon;
+
+const VEHICLE_TOTAL_CARDS = new Map([
+  ["VehiculosTotalN3", {
+    key: "VehiculosTotalN3",
+    page: "vehiculos.html",
+    label: "Vehículos",
+    tooltip: "Total de vehículos en N3",
+    totalField: "TotalCount",
+    subtext: "Total N3",
+    icon: VEHICLE_ICON,
+  }],
+  ["VehiculosTotalN5", {
+    key: "VehiculosTotalN5",
+    page: "vehiculos.html",
+    label: "Vehículos",
+    tooltip: "Total de vehículos en N5",
+    totalField: "TotalN5Count",
+    subtext: "Total N5",
+    icon: VEHICLE_ICON,
+  }],
+]);
+
+const GLOBAL_ACTUAL_COLUMNS = [
+  {
+    title: "Despliegue N3",
+    tone: "n3",
+    metrics: ["VehiculosTotalN3", "VehiculosInstalados", "VehiculosTicketingN3", "VehiculosFmsN3"],
+  },
+  {
+    title: "Sincronización de datos",
+    tone: "sync",
+    metrics: ["Vehiculos", "Conductores", "Topologia", "Horarios", "RtigExpediciones", "RtigParadas"],
+  },
+  {
+    title: "Despliegue N5",
+    tone: "n5",
+    metrics: ["VehiculosTotalN5", "VehiculosActivos", "VehiculosTicketing", "VehiculosFmsN5", "VehiculosHistoricosN5"],
+  },
+];
 
 const DEFAULT_THRESHOLDS = {
   green: 95,
@@ -154,6 +194,57 @@ const RATIO_METRIC_FIELDS = {
   VehiculosFmsN3: "ActiveCount",
   VehiculosFmsN5: "ActiveCount",
   VehiculosHistoricosN5: "ActiveCount",
+};
+
+const VEHICLE_DETAIL_METRICS = {
+  Vehiculos: {
+    denominatorField: "MaestroN3",
+    positiveField: "EnN5",
+    positiveLabel: "En N5",
+    negativeLabel: "Faltan en N5",
+  },
+  VehiculosInstalados: {
+    denominatorField: "MaestroN3",
+    positiveField: "Instalado",
+    positiveLabel: "Instalados",
+    negativeLabel: "No instalados",
+  },
+  VehiculosActivos: {
+    denominatorField: "Instalado",
+    positiveField: "Activo",
+    positiveLabel: "Activos",
+    negativeLabel: "Instalados no activos",
+  },
+  VehiculosTicketingN3: {
+    denominatorField: "Instalado",
+    positiveField: "DatosTicketingN3",
+    positiveLabel: "Con ticketing N3",
+    negativeLabel: "Instalados sin ticketing N3",
+  },
+  VehiculosTicketing: {
+    denominatorField: "Instalado",
+    positiveField: "DatosTicketingN5",
+    positiveLabel: "Con ticketing N5",
+    negativeLabel: "Instalados sin ticketing N5",
+  },
+  VehiculosFmsN3: {
+    denominatorField: "Instalado",
+    positiveField: "DatosFmsN3",
+    positiveLabel: "Con FMS N3",
+    negativeLabel: "Instalados sin FMS N3",
+  },
+  VehiculosFmsN5: {
+    denominatorField: "Instalado",
+    positiveField: "DatosFmsN5",
+    positiveLabel: "Con FMS N5",
+    negativeLabel: "Instalados sin FMS N5",
+  },
+  VehiculosHistoricosN5: {
+    denominatorField: "Instalado",
+    positiveField: "HistoricosN5",
+    positiveLabel: "Con historicos N5",
+    negativeLabel: "Instalados sin historicos N5",
+  },
 };
 
 const UNKNOWN_INTEGRATOR = "Desconocido";
@@ -280,6 +371,7 @@ async function refreshEmbeddedDataScripts(page) {
     "mismatches-data.js",
     "siri-data.js",
     "ticketing-data.js",
+    "vehicle-detail.js",
   ];
   const historyFiles = page === "global-evolucion" ? [
     "mismatches-history-data.js",
@@ -631,6 +723,7 @@ function combineEmbeddedCsvTexts(...texts) {
     "ActiveCount",
     "InstalledCount",
     "TotalCount",
+    "TotalN5Count",
     "SyncPercent",
     "IgnoreOrganizations",
   ];
@@ -730,6 +823,7 @@ function aggregateMetricRows(metric, rows, globalRow) {
   const mismatches = sumNumberField(rows, "MismatchCount");
   const active = capAggregateCount(sumNumberField(rows, "ActiveCount"), toNumber(globalRow && globalRow.ActiveCount));
   const installed = capAggregateCount(sumNumberField(rows, "InstalledCount"), toNumber(globalRow && globalRow.InstalledCount));
+  const totalN5 = capAggregateCount(sumNumberField(rows, "TotalN5Count"), toNumber(globalRow && globalRow.TotalN5Count));
   const row = {
     ExecutionDate: getLatestExecution(rows),
     Scope: "GLOBAL",
@@ -741,6 +835,7 @@ function aggregateMetricRows(metric, rows, globalRow) {
     ActiveCount: Number.isFinite(active) ? String(active) : "",
     InstalledCount: Number.isFinite(installed) ? String(installed) : "",
     TotalCount: Number.isFinite(total) ? String(total) : "",
+    TotalN5Count: Number.isFinite(totalN5) ? String(totalN5) : "",
     SyncPercent: "",
     IgnoreOrganizations: "",
   };
@@ -834,8 +929,14 @@ function renderMetricCards(rowByMetric) {
     return;
   }
 
+  if (isGlobalActualPage()) {
+    renderGlobalActualCards(rowByMetric, false);
+    return;
+  }
+
   const metrics = METRICS;
   grid.classList.toggle("dashboard-sortable-grid", isDashboardPage());
+  grid.classList.remove("global-columns-grid");
   grid.innerHTML = metrics.map((metric) => {
     const row = rowByMetric.get(metric.key);
     const value = toNumber(row && row.SyncPercent);
@@ -848,6 +949,62 @@ function renderMetricCards(rowByMetric) {
   }).join("");
 
   setupDashboardGridDragAndDrop(grid);
+}
+
+function renderGlobalActualCards(rowByMetric, emptyCards) {
+  const grid = document.getElementById("cardsGrid");
+  if (!grid) {
+    return;
+  }
+
+  grid.classList.remove("dashboard-sortable-grid");
+  grid.classList.add("global-columns-grid");
+  grid.innerHTML = GLOBAL_ACTUAL_COLUMNS.map((column) => `
+    <section class="global-metric-column global-metric-column-${column.tone}" aria-label="${escapeHtml(column.title)}">
+      <div class="global-metric-column-header">
+        <h2>${escapeHtml(column.title)}</h2>
+      </div>
+      <div class="global-metric-column-cards">
+        ${column.metrics.map((metricKey) => renderGlobalActualCard(metricKey, rowByMetric, emptyCards)).join("")}
+      </div>
+    </section>
+  `).join("");
+}
+
+function renderGlobalActualCard(metricKey, rowByMetric, emptyCards) {
+  const totalCard = VEHICLE_TOTAL_CARDS.get(metricKey);
+  if (totalCard) {
+    return renderVehicleTotalCard(totalCard, rowByMetric, emptyCards);
+  }
+
+  const metric = METRIC_BY_KEY.get(metricKey);
+  if (!metric) {
+    return "";
+  }
+
+  const row = rowByMetric.get(metric.key);
+  const value = toNumber(row && row.SyncPercent);
+  const subtext = emptyCards ? "Discrepancias: N/D" : getMetricCardSubtext(metric, row);
+  const state = emptyCards ? "bad" : getState(value);
+  const valueText = emptyCards || !Number.isFinite(value) ? "N/D" : `${value.toFixed(1)}%`;
+  const tooltip = metric.tooltip ? ` title="${escapeHtml(metric.tooltip)}"` : "";
+
+  return renderMetricCard(metric, state, valueText, subtext, tooltip);
+}
+
+function renderVehicleTotalCard(card, rowByMetric, emptyCards) {
+  const row = rowByMetric.get("Vehiculos");
+  const total = toNumber(row && row[card.totalField]);
+  const valueText = emptyCards || !Number.isFinite(total) ? "N/D" : formatCountValue(total);
+  const tooltip = card.tooltip ? ` title="${escapeHtml(card.tooltip)}"` : "";
+
+  return renderMetricCard(
+    card,
+    "good metric-card-total",
+    valueText,
+    card.subtext,
+    tooltip
+  );
 }
 
 function renderMetricCard(metric, state, valueText, subtext, tooltip = "") {
@@ -945,12 +1102,22 @@ function renderEmptyCards() {
     return;
   }
 
+  if (isGlobalActualPage()) {
+    renderGlobalActualCards(new Map(), true);
+    return;
+  }
+
   grid.classList.remove("dashboard-sortable-grid");
+  grid.classList.remove("global-columns-grid");
   grid.innerHTML = METRICS.map((metric) => renderMetricCard(metric, "bad", "N/D", "Discrepancias: N/D")).join("");
 }
 
 function isDashboardPage() {
   return document.body && document.body.dataset.page === "dashboard";
+}
+
+function isGlobalActualPage() {
+  return document.body && document.body.dataset.page === "global-actual";
 }
 
 function renderDashboardGrid(rowByMetric, emptyCards) {
@@ -975,6 +1142,7 @@ function renderDashboardGrid(rowByMetric, emptyCards) {
   });
 
   grid.classList.add("dashboard-sortable-grid");
+  grid.classList.remove("global-columns-grid");
   grid.innerHTML = Array.from({ length: slotCount }, (_, index) => `
     <div class="dashboard-grid-slot ${cardHtmlBySlot.has(index) ? "" : "empty"}" data-slot-index="${index}">
       ${cardHtmlBySlot.get(index) || renderDashboardEmptySlot()}
@@ -1965,6 +2133,7 @@ function renderMetricBarsFromCsv(csvText, metric) {
     .map((row) => ({
       org: row.OrganizationAppId,
       integrator: getRowIntegrator(row),
+      metricKey: metric.key,
       percent: getMetricPercent(row, metric.key),
       mismatches: toNumber(row.MismatchCount),
       ratioText: formatMetricDetailText(row, metric.key),
@@ -2021,6 +2190,7 @@ function renderMetricBars(metric, data) {
       ${data.map((item) => renderBarRow(item)).join("")}
     </div>
   `;
+  setupMetricBarDetailHandlers(chart, metric);
 }
 
 function renderBarRow(item) {
@@ -2028,18 +2198,138 @@ function renderBarRow(item) {
   const mismatches = Number.isFinite(item.mismatches) ? item.mismatches : 0;
   const countText = item.ratioText || formatDiscrepancias(mismatches);
   const detailText = item.integrator ? `${formatIntegratorDisplay(item.integrator)} | ${countText}` : countText;
+  const hasVehicleDetail = Boolean(VEHICLE_DETAIL_METRICS[item.metricKey]);
+  const labelContent = `
+        <span>${escapeHtml(item.org)}</span>
+        <span class="bar-label-count">${escapeHtml(detailText)}</span>
+      `;
+  const label = hasVehicleDetail
+    ? `<button class="bar-label bar-label-button" type="button" data-vehicle-detail-org="${escapeHtml(item.org)}" title="Ver matriculas de ${escapeHtml(item.org)}">${labelContent}</button>`
+    : `<div class="bar-label" title="${escapeHtml(item.org)}">${labelContent}</div>`;
 
   return `
     <div class="bar-row">
-      <div class="bar-label" title="${escapeHtml(item.org)}">
-        <span>${escapeHtml(item.org)}</span>
-        <span class="bar-label-count">${escapeHtml(detailText)}</span>
-      </div>
+      ${label}
       <div class="bar-track">
         <div class="bar-fill" style="width:${percent.toFixed(1)}%; background:${getBlueGradientColor(percent)}"></div>
       </div>
       <div class="bar-value">${percent.toFixed(1)}%</div>
     </div>
+  `;
+}
+
+function setupMetricBarDetailHandlers(chart, metric) {
+  if (!VEHICLE_DETAIL_METRICS[metric.key]) {
+    return;
+  }
+
+  chart.querySelectorAll("[data-vehicle-detail-org]").forEach((button) => {
+    button.addEventListener("click", () => {
+      openVehicleDetailModal(metric, button.dataset.vehicleDetailOrg || "");
+    });
+  });
+}
+
+function openVehicleDetailModal(metric, org) {
+  closeVehicleDetailModal();
+  const config = VEHICLE_DETAIL_METRICS[metric.key];
+  const rows = getVehicleDetailRows(org);
+  const denominatorRows = rows.filter((row) => row[config.denominatorField] === true);
+  const positiveRows = denominatorRows.filter((row) => row[config.positiveField] === true);
+  const negativeRows = denominatorRows.filter((row) => row[config.positiveField] !== true);
+  const extraPositiveRows = rows.filter((row) => row[config.positiveField] === true && row[config.denominatorField] !== true);
+  const title = `${metric.label} - ${org}`;
+
+  const modal = document.createElement("div");
+  modal.className = "vehicle-detail-modal-backdrop";
+  modal.dataset.vehicleDetailModal = "true";
+  modal.innerHTML = `
+    <section class="vehicle-detail-modal" role="dialog" aria-modal="true" aria-labelledby="vehicleDetailModalTitle">
+      <div class="vehicle-detail-modal-header">
+        <div>
+          <h2 id="vehicleDetailModalTitle">${escapeHtml(title)}</h2>
+          <p>${escapeHtml(buildVehicleDetailSubtitle(rows, denominatorRows, positiveRows, negativeRows))}</p>
+        </div>
+        <button class="modal-close-button" type="button" data-vehicle-detail-close aria-label="Cerrar">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="vehicle-detail-modal-body">
+        ${rows.length ? renderVehicleDetailColumns(config, positiveRows, negativeRows, extraPositiveRows) : '<p class="vehicle-detail-empty">No hay detalle de matriculas para esta concesion.</p>'}
+      </div>
+    </section>
+  `;
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal || event.target.closest("[data-vehicle-detail-close]")) {
+      closeVehicleDetailModal();
+    }
+  });
+  document.addEventListener("keydown", handleVehicleDetailModalKeydown);
+  document.body.appendChild(modal);
+  modal.querySelector("[data-vehicle-detail-close]")?.focus();
+}
+
+function closeVehicleDetailModal() {
+  document.querySelectorAll("[data-vehicle-detail-modal='true']").forEach((modal) => modal.remove());
+  document.removeEventListener("keydown", handleVehicleDetailModalKeydown);
+}
+
+function handleVehicleDetailModalKeydown(event) {
+  if (event.key === "Escape") {
+    closeVehicleDetailModal();
+  }
+}
+
+function getVehicleDetailRows(org) {
+  const targetOrg = normalize(org);
+  const rows = Array.isArray(window.VEHICLE_DETAIL) ? window.VEHICLE_DETAIL : [];
+  return rows
+    .filter((row) => normalize(row && row.Concesion) === targetOrg)
+    .sort((left, right) => String(left.Vehiculo || "").localeCompare(String(right.Vehiculo || "")));
+}
+
+function buildVehicleDetailSubtitle(rows, denominatorRows, positiveRows, negativeRows) {
+  if (!rows.length) {
+    return "Detalle no disponible";
+  }
+  return `${formatCount(positiveRows.length)} aplican | ${formatCount(negativeRows.length)} no aplican | ${formatCount(denominatorRows.length)} en denominador`;
+}
+
+function renderVehicleDetailColumns(config, positiveRows, negativeRows, extraPositiveRows) {
+  const extraSection = extraPositiveRows.length ? `
+    <section class="vehicle-detail-column vehicle-detail-column-extra">
+      <h3>Fuera de denominador <span>${formatCount(extraPositiveRows.length)}</span></h3>
+      ${renderVehicleDetailList(extraPositiveRows)}
+    </section>
+  ` : "";
+
+  return `
+    <div class="vehicle-detail-columns">
+      <section class="vehicle-detail-column">
+        <h3>${escapeHtml(config.positiveLabel)} <span>${formatCount(positiveRows.length)}</span></h3>
+        ${renderVehicleDetailList(positiveRows)}
+      </section>
+      <section class="vehicle-detail-column">
+        <h3>${escapeHtml(config.negativeLabel)} <span>${formatCount(negativeRows.length)}</span></h3>
+        ${renderVehicleDetailList(negativeRows)}
+      </section>
+      ${extraSection}
+    </div>
+  `;
+}
+
+function renderVehicleDetailList(rows) {
+  if (!rows.length) {
+    return '<p class="vehicle-detail-empty">Sin matriculas.</p>';
+  }
+
+  return `
+    <ul class="vehicle-detail-list">
+      ${rows.map((row) => `<li>${escapeHtml(row.Vehiculo || "")}</li>`).join("")}
+    </ul>
   `;
 }
 
@@ -2291,6 +2581,14 @@ function writeCookie(name, value, maxAgeDays) {
 
 function formatCount(value) {
   return Number.isInteger(value) ? String(value) : String(Number(value).toFixed(1));
+}
+
+function formatCountValue(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "N/D";
+  }
+  return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(numericValue);
 }
 
 function parseCsv(text) {
