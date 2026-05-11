@@ -186,6 +186,8 @@ const DEFAULT_THRESHOLDS = {
   yellow: 50
 };
 
+const PERCENT_DECIMALS = 2;
+
 const RATIO_METRIC_FIELDS = {
   VehiculosInstalados: "InstalledCount",
   VehiculosActivos: "ActiveCount",
@@ -853,7 +855,7 @@ function aggregateMetricRows(metric, rows, globalRow) {
         ? getBoundedRatioNumerator(rawNumerator, percentDenominator)
         : boundedNumerator;
       row[RATIO_METRIC_FIELDS[metric.key]] = String(boundedNumerator);
-      row.SyncPercent = ((percentNumerator / percentDenominator) * 100).toFixed(1);
+      row.SyncPercent = ((percentNumerator / percentDenominator) * 100).toFixed(PERCENT_DECIMALS);
       row.MismatchCount = String(Math.max(denominator - boundedNumerator, 0));
     }
     return row;
@@ -861,7 +863,7 @@ function aggregateMetricRows(metric, rows, globalRow) {
 
   if (metric.key === "Vehiculos" && Number.isFinite(total) && total > 0) {
     const percentDenominator = Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : total;
-    row.SyncPercent = ((Math.max(percentDenominator - mismatches, 0) / percentDenominator) * 100).toFixed(1);
+    row.SyncPercent = ((Math.max(percentDenominator - mismatches, 0) / percentDenominator) * 100).toFixed(PERCENT_DECIMALS);
     return row;
   }
 
@@ -869,7 +871,7 @@ function aggregateMetricRows(metric, rows, globalRow) {
     .map((item) => toNumber(item.SyncPercent))
     .filter(Number.isFinite);
   if (syncValues.length) {
-    row.SyncPercent = (syncValues.reduce((sum, value) => sum + value, 0) / syncValues.length).toFixed(1);
+    row.SyncPercent = (syncValues.reduce((sum, value) => sum + value, 0) / syncValues.length).toFixed(PERCENT_DECIMALS);
   }
   return row;
 }
@@ -942,7 +944,7 @@ function renderMetricCards(rowByMetric) {
     const value = toNumber(row && row.SyncPercent);
     const subtext = getMetricCardSubtext(metric, row);
     const state = getState(value);
-    const valueText = Number.isFinite(value) ? `${value.toFixed(1)}%` : "N/D";
+    const valueText = Number.isFinite(value) ? `${value.toFixed(PERCENT_DECIMALS)}%` : "N/D";
     const tooltip = metric.tooltip ? ` title="${escapeHtml(metric.tooltip)}"` : "";
 
     return renderMetricCard(metric, state, valueText, subtext, tooltip);
@@ -1001,7 +1003,7 @@ function getGlobalColumnScore(column, rowByMetric, emptyCards) {
   const average = values.reduce((sum, value) => sum + value, 0) / values.length;
   return {
     state: getState(average),
-    text: `${average.toFixed(1)}%`,
+    text: `${average.toFixed(PERCENT_DECIMALS)}%`,
   };
 }
 
@@ -1020,7 +1022,7 @@ function renderGlobalActualCard(metricKey, rowByMetric, emptyCards) {
   const value = toNumber(row && row.SyncPercent);
   const subtext = emptyCards ? "Discrepancias: N/D" : getMetricCardSubtext(metric, row);
   const state = emptyCards ? "bad" : getState(value);
-  const valueText = emptyCards || !Number.isFinite(value) ? "N/D" : `${value.toFixed(1)}%`;
+  const valueText = emptyCards || !Number.isFinite(value) ? "N/D" : `${value.toFixed(PERCENT_DECIMALS)}%`;
   const tooltip = metric.tooltip ? ` title="${escapeHtml(metric.tooltip)}"` : "";
 
   return renderMetricCard(metric, state, valueText, subtext, tooltip);
@@ -1170,7 +1172,7 @@ function renderDashboardGrid(rowByMetric, emptyCards) {
     const value = toNumber(row && row.SyncPercent);
     const subtext = emptyCards ? "Discrepancias: N/D" : getMetricCardSubtext(metric, row);
     const state = emptyCards ? "bad" : getState(value);
-    const valueText = emptyCards || !Number.isFinite(value) ? "N/D" : `${value.toFixed(1)}%`;
+    const valueText = emptyCards || !Number.isFinite(value) ? "N/D" : `${value.toFixed(PERCENT_DECIMALS)}%`;
     const tooltip = metric.tooltip ? ` title="${escapeHtml(metric.tooltip)}"` : "";
     cardHtmlBySlot.set(placement.get(metric.key), renderMetricCard(metric, state, valueText, subtext, tooltip));
   });
@@ -1499,7 +1501,7 @@ function renderEvolutionChart(data) {
 
     const circles = points.map((point) => `
       <circle class="chart-point" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="4" fill="${serie.color}">
-        <title>${escapeHtml(serie.label)} - ${escapeHtml(formatDay(point.day))}: ${point.value.toFixed(1)}%</title>
+        <title>${escapeHtml(serie.label)} - ${escapeHtml(formatDay(point.day))}: ${point.value.toFixed(PERCENT_DECIMALS)}%</title>
       </circle>
     `).join("");
 
@@ -2071,7 +2073,7 @@ function setupGlobalConcesionesIntegratorFilters(container) {
 
 function renderGlobalTotalCell(row) {
   const state = getState(row.totalPercent);
-  const valueText = Number.isFinite(row.totalPercent) ? `${row.totalPercent.toFixed(1)}%` : "N/D";
+  const valueText = Number.isFinite(row.totalPercent) ? `${row.totalPercent.toFixed(PERCENT_DECIMALS)}%` : "N/D";
 
   return `
     <td>
@@ -2086,7 +2088,7 @@ function renderGlobalTotalCell(row) {
 function renderGlobalMetricCell(row, metric) {
   const value = getMetricPercent(row, metric && metric.key);
   const mismatches = toNumber(row && row.MismatchCount);
-  const valueText = Number.isFinite(value) ? `${value.toFixed(1)}%` : "N/D";
+  const valueText = Number.isFinite(value) ? `${value.toFixed(PERCENT_DECIMALS)}%` : "N/D";
   const metricText = formatMetricDetailText(row, metric && metric.key);
   const mismatchText = metricText || (Number.isFinite(mismatches) ? formatDiscrepancias(mismatches) : "Sin dato");
   const grayStyle = Number.isFinite(value) ? ` style="${getGrayGradientStyle(value)}"` : "";
@@ -2245,9 +2247,9 @@ function renderBarRow(item) {
     <div class="bar-row">
       ${label}
       <div class="bar-track">
-        <div class="bar-fill" style="width:${percent.toFixed(1)}%; background:${getBlueGradientColor(percent)}"></div>
+        <div class="bar-fill" style="width:${percent.toFixed(PERCENT_DECIMALS)}%; background:${getBlueGradientColor(percent)}"></div>
       </div>
-      <div class="bar-value">${percent.toFixed(1)}%</div>
+      <div class="bar-value">${percent.toFixed(PERCENT_DECIMALS)}%</div>
     </div>
   `;
 }
