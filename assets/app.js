@@ -37,7 +37,7 @@ const METRICS = [
     pageId: "vehiculos-ticketing-n3",
     summaryId: "vehiculosTicketingN3Summary",
     chartId: "vehiculosTicketingN3Chart",
-    label: "Vehículos ticketing N3",
+    label: "Vehículos FCS N3",
     tooltip: "Porcentaje de vehículos instalados con alguna validación en N3 en los últimos 7 días",
     color: "#2563eb",
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M6 7v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7M8 11h4M8 15h8M16 4v6"></path></svg>'
@@ -48,7 +48,7 @@ const METRICS = [
     pageId: "vehiculos-ticketing",
     summaryId: "vehiculosTicketingSummary",
     chartId: "vehiculosTicketingChart",
-    label: "Vehículos ticketing N5",
+    label: "Vehículos FCS N5",
     tooltip: "Porcentaje de vehículos instalados con alguna validación en N5 en los últimos 7 días",
     color: "#2563eb",
     icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M6 7v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7M8 11h4M8 15h8M16 4v6"></path></svg>'
@@ -220,14 +220,14 @@ const VEHICLE_DETAIL_METRICS = {
   VehiculosTicketingN3: {
     denominatorField: "Instalado",
     positiveField: "DatosTicketingN3",
-    positiveLabel: "Con ticketing N3",
-    negativeLabel: "Instalados sin ticketing N3",
+    positiveLabel: "Con FCS N3",
+    negativeLabel: "Instalados sin FCS N3",
   },
   VehiculosTicketing: {
     denominatorField: "Instalado",
     positiveField: "DatosTicketingN5",
-    positiveLabel: "Con ticketing N5",
-    negativeLabel: "Instalados sin ticketing N5",
+    positiveLabel: "Con FCS N5",
+    negativeLabel: "Instalados sin FCS N5",
   },
   VehiculosFmsN3: {
     denominatorField: "Instalado",
@@ -271,12 +271,12 @@ const HELP_SECTIONS = [
     text: "Porcentaje de vehículos instalados que han registrado actividad operativa en el periodo analizado. Un valor inferior al de vehículos instalados indica unidades equipadas pero sin servicio reciente.",
   },
   {
-    title: "Vehículos ticketing N3",
-    text: "Porcentaje de vehículos instalados que han generado datos de validación registrados en el sistema de ticketing N3. Un valor bajo puede indicar que parte de la flota instalada no ha generado validaciones recientes o que hay incidencias en la transmisión de eventos de validación.",
+    title: "Vehículos FCS N3",
+    text: "Porcentaje de vehículos instalados que han generado datos de validación registrados en FCS N3. Un valor bajo puede indicar que parte de la flota instalada no ha generado validaciones recientes o que hay incidencias en la transmisión de eventos de validación.",
   },
   {
-    title: "Vehículos ticketing N5",
-    text: "Porcentaje de vehículos instalados que han generado datos de validación registrados en el módulo de ticketing N5. Un valor bajo puede indicar que parte de la flota instalada no opera con el sistema de validación integrado o que hay incidencias en la transmisión de eventos de validación.",
+    title: "Vehículos FCS N5",
+    text: "Porcentaje de vehículos instalados que han generado datos de validación registrados en FCS N5. Un valor bajo puede indicar que parte de la flota instalada no opera con el sistema de validación integrado o que hay incidencias en la transmisión de eventos de validación.",
   },
   {
     title: "Vehículos FMS N3 / N5",
